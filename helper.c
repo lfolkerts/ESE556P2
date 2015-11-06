@@ -7,14 +7,15 @@
 #include <ctype.h>
 #include "my_header.h"
 
+int LogTwo(int i)
+{
+	assert(i >= 0);
+	for(ret = 0; i !=0; ret++){ i = i>>1; }
+	return ret;
+}
 
-static int getint();
-static int Endline();
-static int to_integer(char * c);
-static void help();
-static void inline request_help();
 
-static char GetOrientation(FILE* go_file)
+char GetOrientation(FILE* go_file)
 {
        int ret, i;
         char s[2];
@@ -56,7 +57,7 @@ static char GetOrientation(FILE* go_file)
         return to_integer(s);
 }
 
-static int GetNextInt(FILE* gni_file)
+int GetNextInt(FILE* gni_file)
 {
 	int ret, i;
 	char s[10];
@@ -77,7 +78,7 @@ static int GetNextInt(FILE* gni_file)
  *
  * returns length of line on sucess, negative value on error
  **************************************************/
-static int  Endline(FILE* el_file)
+int  Endline(FILE* el_file)
 {
 	unsigned char c[1];
 	int i, err;
@@ -99,7 +100,7 @@ static int  Endline(FILE* el_file)
  *
  * returns the integer
  ***********************************************/
-static int to_integer(char * c)
+int to_integer(char * c)
 {
 	int i, val;
 	i= val = 0;
@@ -116,7 +117,7 @@ static int to_integer(char * c)
 /************** help ***************
  * prints out help message
  ***********************************/
-static void Help()
+void Help()
 {
 	fprintf(stdout, "request_help");
 
@@ -125,7 +126,8 @@ static void Help()
 /***********request_help ***********
  * suggests to confused users that the seek help
  ***********************************/
-static void inline RequestHelp()
+
+void inline RequestHelp()
 {
 	fprintf(stdout,  "Use \"./algo -h\" for help");
 }
