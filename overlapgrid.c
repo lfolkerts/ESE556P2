@@ -1,21 +1,12 @@
-struct grid_hdr** GridHdr;
-struct node *** Grid;
-struct node* RemoveStack;
-struct node** EmptyNodeList;
-int* EmptyNodeCnt;
-int NumRows;
-int RowWidth;
-
+struct node *** OverlapGrid, OverlapGridCpy;
+int gridOverlap, gridOverlapCpy;
+int extraRowWidth, extraRowWidthCpy;
 //variables unique to this module
-static char gridLock;
-static uint32_t emptyNodeID;
-int eNodeListSize;
 
 void InitOverlapGrid()
 {
-	gridLock = 0;
-	gridOverlap = 0;
-	extraRowWidth = 0;
+	gridOverlap = gridOverlapCpy = 0;
+	extraRowWidth = extraRowWidthCpy = 0;
 }
 int getOverlapCost(){return gridOverlap;}
 int getExtraRowWidthCost(){return extraRowWidth;}
@@ -30,7 +21,7 @@ void InsertOverlapNode(struct node* insert, int x, int y)
 
         insert->x = x;
         insert->y = y;
-	workon_overlap(insert, 1);
+	work_overlap(insert, 1);
 }
 
 void work_overlap(struct node* insert, int insert_flag) 
@@ -209,4 +200,56 @@ int MoveOverlapRandom(struct node* move)
 	InsertOverlapNode(move, x, y);
 }
 
-			
+void AcceptiOverlapMove()
+{
+        struct node *n, *ncpy;
+        int i, j;
+        int ecnt;
+        //copy modules
+        for(i=0; i<Modules; i++)
+        {
+                n = N_Arr[i];
+                ncpy = N_ArrCpy[i];
+                if(n==NULL){continue;}
+                assert(ncpy != NULL);
+                CopyParallelNode(n, ncpy);
+        }
+        //copy grid ptrs
+        for(i=0; i<NumRows; i++)
+        {
+                for(j=0; j<RowWidth/GRID_GRAIN; j++)
+                {
+                        n = OverlapGrid[i][j];
+                        if(n==NULL){OverlapGridCpy[i][j] = NULL;}
+			if(n->type == 'a'){ OverlapGridCpy[i][j] = N_ArrCpy[n->index];}
+                        else if(n->type == 'p'){ OverlapGridCpy[i][j] = N_ArrCpy[n->index+PadOffest];}
+                }
+        }
+}
+void RejectOverlapMove()
+{
+        struct node *n, *ncpy;
+        int i, j;
+        int ecnt;
+        //copy modules
+        for(i=0; i<Modules; i++)
+        {
+                n = N_Arr[i];
+                ncpy = N_ArrCpy[i];
+                if(n==NULL){continue;}
+                assert(ncpy != NULL);
+                RestoreParallelNode(ncpy, n);
+        }
+        //copy grid ptrs
+        for(i=0; i<NumRows; i++)
+        {
+                for(j=0; j<RowWidth/GRID_GRAIN; j++)
+                {
+                        ncpy = OverlapGridCpy[i][j];
+			if(ncpy==NULL){OverlapGrid[i][j] = NULL;}
+                        else if(ncpy->type == 'a'){ OverlapGrid[i][j] = N_Arr[ncpy->index];}
+                        else if(ncpy->type == 'p'){ OverlapGrid[i][j] = N_Arr[ncpy->index+PadOffest];}
+                }
+        }
+}
+	

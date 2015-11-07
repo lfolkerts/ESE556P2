@@ -1,53 +1,60 @@
 struct grid_hdr** GridHdr;
 struct node *** Grid, GridCpy;
-struct node** EmptyNodeList;
-int* EmptyNodeCnt;
+struct node** EmptyNodeList, EmptyNodeListCpy;
 int NumRows;
 int RowWidth;
 
-
 //variables unique to this module
 static char gridLock;
-static uint32_t emptyNodeID;
+int emptyNodeID, emptyNodeIDCpy;
 int eNodeListSize;
+int emptyNodeCnt, emptyNodeCntCpy;
 
 void InitGrid()
-{
-	gridLock = 0;
+{`
+	gridLock = -1;
 }
-
+void FillGrid()
+{
+	struct node *n, *blocking;
+	int i, err;
+	gridLock = 0;
+	//first make entire grid empty
+	n = CreateEmptyNode(0,0,GridHdr[NumRows]->coordinate, RowWidth); //create and empty Node
+	n->north = n->south = n->east = n->west = NULL;
+	update_grid(n);
+	
+	for(i=Modules - PadOffset; i>=0; i--)
+	{
+		n = N_Arr[i];
+		if(n==NULL){ continue;}
+		while((blocking=InsertNode(n, n->x, n->y, &err))!=NULL)
+		{
+			if(err !=0){n->x--;}
+			MoveLocal(blocking, move);
+		}
+	}
+	
+	AcceptMove();//copy to working copy
+}
 void InitEmptyNodeList(int size)
 {
-	eNodeListSize = LogTwo(size)+1;
+	eNodeListSize = size;
 	do{ EmptyNodeList = (struct node**) malloc(eNodeListSize * sizeof(struct node*)); }while(EmptyNodeList==NULL);
-	do{ EmptyNodeCnt = (int *) malloc(size*sizeof(int)); } while(EmptyNodeCnt == NULL);
+	do{ EmptyNodeListCpy = (struct node**) malloc(eNodeListSize * sizeof(struct node*)); }while(EmptyNodeList==NULL);
 	for(i=0; i<= size; i++)
 	{ 
 		EmptyNodeList[i] = NULL; 
-		EmptyNodeCnt[i] = 0;
 	}
 	emptyNodeID = 0;
-	
+	emptyNodeCnt = 0;
 }
-
-void listinsert_empty_node(struct node * insert)
+int getNewEmptyNodeID()
 {
-	int index;
-	index = LogTwo(insert->width);
-	
-	if(EmptyNodeList[index]==NULL)
-	{
-		insert->e_next = insert->e+prev = NULL;
-		EmptyNodeList[index]=insert;
-	}
-	else
-	{
-		insert-> e_next = EmptyNodeList[index];
-		insert-> e_prev = NULL;
-		EmptyNodeList[index]->e_prev = insert;
-		EmptyNodeList[index] = insert;
-	}
-	EmptyNodeCnt[index]++;	
+	while(EmptyNodeList[emptyNodeID]!=NULL){emptyNodeID++; }
+	emptyNodeCnt = (emptyNodeID>emptyNodeCnt)?emptyNodeID:emptyNodeCnt;
+	assert(eNodeListSize>EmptyNodeCnt);
+	return emptyNodeID;
 }
 
 struct node* CreateEmptyNode(int x, int y, int height, int width)
@@ -57,7 +64,7 @@ struct node* CreateEmptyNode(int x, int y, int height, int width)
 	do{n = (struct node*) malloc(sizeof(node));} while(n==NULL); //create node
 
 	n->type  = 'e'; //empty
-	n->index = emptyNodeID++; //not used for now
+	n->index = getNewEmptyNodeID(); //not used for now
 	n->locked = 0;
 	n->cost = 0;
 	n->birth = NULL;
@@ -69,7 +76,7 @@ struct node* CreateEmptyNode(int x, int y, int height, int width)
 	n->width = width;
 	n->height = height;
 	
-	listinsert_empty_node(n); //append empty node to list
+	EmptyNodeList[n->index] = n;
 	return n;
 }
 
@@ -77,13 +84,8 @@ void listremove_empty_node(struct node* remove)
 {
 	int index;
 	assert(remove!=NULL);
-	index = LogTwo(remove->width);
-	
-	if(remove->e_next!=NULL){ remove->e_next->e_prev = remove->e_prev;}
-	if(remove->e_prev!=NULL){remove->e_prev->e_next = remove->e_next;}
-	else{ EmptyNodeList[index] = remove->e_next; } //e_prev==NULL means it is at top of stack already
-	
-	EmptyNodeCnt[index]--;
+	emptyNodeID = remove->index;
+	EmptyNodeList[remove->index] = NULL;
 	free(remove);
 }
 /***************************************************************
@@ -711,6 +713,8 @@ int MoveLocal(struct node* move, struct node* keepout)
 void AcceptMove()
 {
 	struct node *n, *ncpy;
+	int i, j;
+	int ecnt;
 	//copy modules
 	for(i=0; i<Modules; i++)
 	{
@@ -721,19 +725,81 @@ void AcceptMove()
 		CopyParallelNode(n, ncpy);
 	}
 	//copy empty nodes
-	for(i=0; i<eNodeListSize; i++)
+	ecnt = (emptyNodeCnt>emptyNodeCntCpy)?emptyNodeCnt:emptyNodeCntCpy; //iterate through bogger of 2
+	for(i=0; i<ecnt; i++)
         {
 		n = EmptyNodeList[i];
-                ncpy = EmptyNodeList[i];
-               	while(n!=NULL)
+                ncpy = EmptyNodeListCpy[i];
+               	if(n==NULL && ncpy!=NULL)
+		{listremove_empty_nodecpy(ncpy); }
+		else if(n!=NULL && ncpy==NULL)
 		{
-                	assert(ncpy != NULL);
-	                CopyParallelNode(n, ncpy);
-			n = n->e_next;
-			ncpy = n->e_next;
+			do{ncpy = malloc(sizeof(node))}while(ncpy==NULL);
+			CopyParallelNode(n, ncpy);
+			EmptyNodeListCpy[ncpy->index] = ncpy;	
 		}
+		else if(n!=NULL && ncpy!=NULL)
+		{CopyParallelNode(n, ncpy);}
         }
+	emptyNodeCntCpy = emptyNodeCnt;
+	emptyNodeIDCpy = emptyNodeID;
 	//copy grid ptrs
+	for(i=0; i<NumRows; i++)
+	{
+		for(j=0; j<RowWidth/GRID_GRAIN; j++)
+		{
+			n = Grid[i][j];
+			if(n->type == 'e'){ GridCpy[i][j] = EmptyNodeListCpy[n->index];}
+			else if(n->type == 'a'){ GridCpy[i][j] = N_ArrCpy[n->index];}
+			else if(n->type == 'p'){ GridCpy[i][j] = N_ArrCpy[n->index+PadOffest];}
+		}
+	}
+}
+	
+void RejectMove() //same as accept move except swapped xx<->xxCpy
+{
+	struct node *n, *ncpy;
+	int i, j;
+	int ecnt;
+	//copy modules
+	for(i=0; i<Modules; i++)
+	{
+		n = N_Arr[i];
+		ncpy = N_ArrCpy[i];
+		if(ncpy==NULL){continue;}
+		assert(n != NULL);
+		RestoreParallelNode(ncpy, n);
+	}
+	//copy empty nodes
+	ecnt = (emptyNodeCnt>emptyNodeCntCpy)?emptyNodeCnt:emptyNodeCntCpy; //iterate through bogger of 2
+	for(i=0; i<ecnt; i++)
+        {
+		n = EmptyNodeList[i];
+                ncpy = EmptyNodeListCpy[i];
+               	if(ncpy==NULL && n!=NULL)
+		{listremove_empty_nodecpy(n); }
+		else if(ncpy!=NULL && n==NULL)
+		{
+			do{n = malloc(sizeof(node))}while(n==NULL);
+			RestoreParallelNode(ncpy, n);
+			EmptyNodeList[n->index] = n;	
+		}
+		else if(ncpy!=NULL && n!=NULL)
+		{RestoreParallelNode(ncpy, n);}
+        }
+	emptyNodeCnt = emptyNodeCntCpy;
+	emptyNodeID = emptyNodeIDCpy;
+	//copy grid ptrs
+	for(i=0; i<NumRows; i++)
+	{
+		for(j=0; j<RowWidth/GRID_GRAIN; j++)
+		{
+			ncpy = GridCpy[i][j];
+			if(ncpy->type == 'e'){ Grid[i][j] = EmptyNodeList[ncpy->index];}
+			else if(ncpy->type == 'a'){ Grid[i][j] = N_Arr[ncpy->index];}
+			else if(ncpy->type == 'p'){ Grid[i][j] = N_Arr[ncpy->index+PadOffest];}
+		}
+	}
 	
 }
 
