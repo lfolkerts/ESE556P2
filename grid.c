@@ -3,21 +3,30 @@ struct node *** Grid;
 struct node* RemoveStack;
 struct node** EmptyNodeList;
 int* EmptyNodeCnt;
-char GridLock;
-uint32_t emptynodeid;
+int NumRows;
+int RowWidth;
+
+//variables unique to this module
+static char gridLock;
+static uint32_t emptyNodeID;
+int eNodeListSize;
+
+void InitGrid()
+{
+	gridLock = 0;
+}
 
 void InitEmptyNodeList(int size)
 {
-	size = LogTwo(size)+1;
-	do{ EmptyNodeList = (struct node**) malloc(size * sizeof(struct node*)); }while(EmptyNodeList==NULL);
+	eNodeListSize = LogTwo(size)+1;
+	do{ EmptyNodeList = (struct node**) malloc(eNodeListSize * sizeof(struct node*)); }while(EmptyNodeList==NULL);
 	do{ EmptyNodeCnt = (int *) malloc(size*sizeof(int)); } while(EmptyNodeCnt == NULL);
 	for(i=0; i<= size; i++)
 	{ 
 		EmptyNodeList[i] = NULL; 
 		EmptyNodeCnt[i] = 0;
 	}
-
-	emptynodeid = 0;
+	emptyNodeID = 0;
 	
 }
 
@@ -48,7 +57,7 @@ struct node* CreateEmptyNode(int x, int y, int height, int width)
 	do{n = (struct node*) malloc(sizeof(node));} while(n==NULL); //create node
 
 	n->type  = 'e'; //empty
-	n->index = emptynodeid++; //not used for now
+	n->index = emptyNodeID++; //not used for now
 	n->locked = 0;
 	n->cost = 0;
 	n->birth = NULL;
@@ -139,7 +148,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 			west = find(replace->x - 1, y + insert->height - 1); //new_empty_node->west; new_empty_node will be called north
 	                north = CreateEmptyNode(replace->x, replace->y, replace->width, y + insert->height - replace->y); //replace->north
 			
-			GridLock++;
+			gridLock++;
 			north->north = replace->north;
 			north->east = replace->east;
 			north->south = replace;
@@ -153,7 +162,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 			update_all_boundries(east);
 			//update_grid(replace); //dont need since we are just shrinking replace and updated new+empty_nodes ptrs already
 			//update_all_boundries(replace);
-			GridLock--;
+			gridLock--;
 	        }
 	}
 	
@@ -174,20 +183,20 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
                 assert(replace!=NULL);
 		if(replace->x == x && replace->width == insert->width) //same x and width
 		{
-			GridLock++;
+			gridLock++;
 			expand->height += replace->height;
 			expand->south = replace->south;
 			expand->west = replace->west;
 			update_grid(expand, expand);
 			update_all_boundries(expand);
 			listremove_empty_node(replace);
-			GridLock--;
+			gridLock--;
 		}
 		else if(replace->x == x) //same start, but empty node extends further
 		{
 			//shrink replace width from west to east
 			south = find(x + insert->width, replace->y + replace->height); //replace south
-			GridLock++;
+			gridLock++;
 			//expand expand
 			expand->height += replace->height;		
 			expand->south = replace->south;
@@ -200,14 +209,14 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 			
 			update_grid(replace, replace);
                         update_all_boundries(replace);
-			GridLock--;
+			gridLock--;
 		}
 		else if(replace->x + replace->width == x + insert->width)	//share same west boundry
 		{
 			north = find(x -1, replace->y-1); //replace north
 			south = find(x, replace->y+replace->height); //expand->south
 
-			GridLock++;
+			gridLock++;
 			expand->height += replace->height;
                         expand->south = south;
                         expand->west = replace;
@@ -219,7 +228,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
                         update_grid(replace, replace);
                         update_all_boundries(replace);
 			
-			GridLock--;
+			gridLock--;
 		}
 		else //free space to the east and west of insert
 		{
@@ -237,7 +246,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 	
 	//replace insert with expand
 	assert(expand->height == insert->height); //other expand parameters were never changed
-	GridLock++;
+	gridLock++;
 	assert(insert->north == expand->north);  
 	insert->east = expand->east //can be different in the case a new node was inserted
 	assert(insert->south == expand->south); 
@@ -245,7 +254,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 
 	update_grid(insert, insert)
 	update_all_boundries(insert);
-	GridLock--;
+	gridLock--;
 	*err = 0;
 	return NULL;
 
@@ -262,8 +271,13 @@ void remove_node(struct node* remove)
 
 	assert(remove->type != 'f' && remove->type != 'F');
 	//combine sorrrounding empty nodes, unlink pointers to remove node (recursive)
-	combine_ew(remove->east, remove->west, remove);
-
+	filler = create_filler_node(remove);
+	combine_ew(remove->east, remove->west, filler);
+	assert(filler->height == 0);
+	//theres a chance the upper replacement node is linked to filler->north
+	if(filler->south->north == filler){filler->south->north = filler->north;}
+	free(filler);
+	
 	//unlink node from grid
 	remove->north = NULL;
 	remove->east = NULL;
@@ -286,56 +300,87 @@ void remove_node(struct node* remove)
  * Then we will combine the nodes
  * We return the west node that is in line with the latitude we are operating at
  **********************************************************************************************/
-struct node* combine_ew(struct node* east, struct node* west, struct node* void_area)
+struct node* combine_ew(struct node* east, struct node* west, struct node* filler)
 {
-	struct node* retnode;
+	struct node *retnode, *tnorth, *tsouth, *teast, *twest; //return node, and temporary direction nodes
 	int iheight;
 
 	assert((east->y + east->height) <= (west->y + west->height)); //should not go to far south
 	if((east->y + east->height) != (west->y + west->height))
 	{  
-		west = combine_ew(east->south, west, void_area); 
+		west = combine_ew(east->south, west, filler); 
 	} 
 	assert(west!=NULL);
+	
 	if(east->type=='e' && west->type=='e') //empty
 	{
+		assert(east->y +east->height == west->y + west->height); //should have same terminating line
 		if(east->y == west->y)
 		{
-			assert(east->height == west->height);
 			retnode = west->north;
-			GridLock++;
-			west->width = west->width + void_area->width + east->width; //extend
+			twest = west->north; //find(west->x-1, west->y-1); //filler->west
+			gridLock++;
+			//expand west eastward
+			west->width = west->width + filler->width + east->width; //extend
 			west->north = east->north; //fix pointers for west node
 			west->east = east->east; 	
-			remove_empty_node(east); //delete
+			//remove east
+			listremove_empty_node(east); 
+			//shrink filler northward
+			filler->height -= west->height;
+			filler->south = west;
+			filler->west = twest;
+
 			update_grid_ptr(west, west); //fix grid ptrs
 			update_all_boundries(west);// fix corner stitching TO west
-			GridLock--;
+			gridLock--;
+		
 			return retnode; //move up one node
 		}
-		else if(east->y < west->y)
+		else if(east->y < west->y)//east higher than west
 		{
-			GridLock++;
+			retnode = west->north;
+			teast = find(east->x + east->width, west->y); //west->east
+			gridLock++;
+			//shrink east northward
 			east->height = west->y - east->y; //shrink
-			west->width = west->width + void_area->width + east->width; //expand
-			west->north = east->north; //fix pointers for west node
-			west->east = east->east;  
+			east->south = west;
+			east->west = filler;		
+			//expand west eastward
+			west->width = west->width + filler->width + east->width; //expand
+			west->north = east; //fix pointers for west node
+			west->east = teast;  
+			//shrink filler northward			
+			filler->height -= west->height;
+			filler->south = west;
+			filler->west = west->north;
+			
 			update_grid_ptr(west, west);  //fix grid ptrs
 			update_all_boundries(west);// fix corner stitching TO west
-			GridLock--;
-			return west->north; //move up one node
+			gridLock--;
+			return combine_ew(east, retnode, filler); //need to perform operation on east again
 		}
-		else //if(east->y > west->y)
-		{
-			GridLock++;
-			west->height = east->y - west->y; //shrink
-			east->x = west->x; //shift (expand part 1)
-			east->width = west->width + void_area->width + east->width; //expand
+		else //if(east->y > west->y) //west higher than east
+		{ 
+			twest = find(west->x-1, east->y-1); //west->west
+			gridLock++;
+			//expand east westward
+			east->x = west->x; //shift
+			east->width = west->width + filler->width + east->width; //expand
 			east->south = west->south; //fix pointers from east node
 			east->west = west->west;
+			//shrink west northward
+			west->height = east->y - west->y; //shrink
+			west->south = east;
+			west->west = twest;
+			//shrink filler northward
+			filler->height -= east->height;		
+			filler->south = east;
+			filler->west = west;
+	
 			update_grid_ptr(east, east); //fix grid ptrs
 			update_all_boundries(east);// fix corner stitching TO east
-			GridLock--;
+			gridLock--;
 			return west;
 		}
 	}
@@ -343,37 +388,68 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* void_
 	{
 		if(east->y == west->y)
 		{
-			GridLock++;
-			east->x = void_area->x; //shift
-			east->width = void_area->width + east->width; //extend east
+			gridLock++;
+			//expand east westward
+			east->x = filler->x; //shift
+			east->width += filler->width; //extend east
 			east->west = west;
-			east->south = find_node(east->y + east->height, east->x); //find south (SW corner)
+			east->south = filler->south; //find south (SW corner)
+			//shrink filler northward
+			filler -= east->height;
+			filler->west = west->north;
+			filler->south = east;
+			
 			update_grid_ptr(east, east); //fix grid ptrs
 			update_all_boundries(east);// fix corner stitching TO east
-			GridLock--;
+			gridLock--;
 			return west->north; //move up one node
 		}
-		else if(east->y < west->y)
+		else if(east->y < west->y)//east higher than west
 		{
-			GridLock++;
-			iheight = (east->y + east->height < west->y + west->height) ?
+			//create new empty node to fill in node space
+			assert(east->height + east->y <= west->height+west->y);
+			/*iheight = (east->y + east->height < west->y + west->height) ?
 				east->y + east->height - west->y :
-				west->height;
-			east->height = west->y - east->y; //shrink east
-			CreateEmptyNode(void_area->x, west->y, void_area->width + east->width, iheight);
-			GridLock--;
-			return combine_ew(east, west->north, void_area); 
+				west->height;*/
+			tsouth = CreateEmptyNode(filler->x, west->y, filler->width + east->width, east->y + east->height - west->y); //filler->south
+			teast = find(east->x+east->width, west->y); //tsouth->east
+			gridLock++;
+			//fix new_node (tsouth) pointers
+			tsouth->north = east;
+			tsouth->east = teast;
+			tsouth->south = filler->south;
+			tsouth->west = west;		
+			//shrink east northward
+			east->height -= tsouth->height; 
+			east->south = tsouth; 
+			east->west = filler;
+			//shrink filler
+			filler->height -= tsouth->height;
+			filler->south = tsouth;
+			filler->west = west->north;
+	
+			update_grid(tsouth, tsouth);
+			update_all_boundries(tsouth);
+			gridLock--;
+			return combine_ew(east, west->north, filler); //need to perform operation on east again
 		}
-		else// if(east->y > west->y)
+		else// if(east->y > west->y) //west higher than east
 		{
-			GridLock++;
-			east->x = void_area->x; //shift 
-			east->width = void_area->width + east->width; //expand
-			east->south = find_node(east->y + east-> height, east->x); 
+			
+			gridLock++;
+			//expand east westward
+			east->x = filler->x; //shift 
+			east->width = filler->width + east->width; //expand
+			east->south = filler->south;
 			east->west = west;
-			update_grid_ptr(east, east); //fix grid ptrs
+			//shrink filler northward
+			filler->height -= east->height;
+			filler->south = east;
+			filler->west = west;
+
+			update_grid(east, east); //fix grid ptrs
 			update_all_boundries(east);// fix corner stitching TO east
-			GridLock--;
+			gridLock--;
 			return west; 
 		}
 
@@ -383,40 +459,64 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* void_
 	{
 		if(east->y == west->y)
 		{
-			GridLock++;
-			west->width = west->width + void_area->width; //extend east
-			//north pointer may not be created yet - will wait for higher recursive call to do this
+			retnode = twest = west->north;
+			gridLock++;
+			//expand west eastward
+			west->width = west->width + filler->width; //extend east
+			west->north = filler;
 			west->east = east;
-			update_grid_ptr(west, west); //fix grid ptrs
-			//north - same problem as above comment
-			update_boundry(west, OR_S);
-			update_boundry(west, OR_E);
-			//west - boundry remains the same
-			GridLock--;
-			return west->north; //un-updated (stale) north pointer
+			//shrink filler northward
+			filler->height -= west->height;
+			filler->south = west;
+			filler->west = twest;
+		
+			update_grid(west, west); //fix grid ptrs
+			update_all_boundries(west);
+			gridLock--;
+			return retnode;
 		}
-		else if(east->y < west->y)
+		else if(east->y < west->y) //east is higher than west
 		{
-			GridLock++;
-			retnode = west->north;
-			west->width = west->width + void_area->width;
-			//cannot update north - node may not be existant yet
+			retnode = twest = west->north;
+			gridLock++;
+			//expand west
+			west->width = west->width + filler->width;
+			west->north = filler;
 			west->east = east;
-			update_grid_ptr(west, west); //fix grid ptrs
-			//north - same problem as above comment
-			update_boundry(west, OR_S);
-			update_boundry(west, OR_E);
-			//west - boundry remains the same
-			GridLock--;
-			return combine_ew(east, retnode, void_area); //still need work on east, with new west
+			//shrink filler
+			filler->height -= west->height;
+			filler->south = west;
+			filler->west = twest;	
+		
+			update_grid(west, west); //fix grid ptrs
+			update_all_boundries(west);
+			gridLock--;
+			return combine_ew(east, retnode, filler); //still need work on east, with new west
 		}
-		else //if (east->y > west->y)
+		else //if (east->y > west->y) //west higher than east
 		{
 			iheight = west->y + west->height - east->y;
-			GridLock++;
-			west->height = east->y - west->y; //shrink west verically
-			CreateEmptyNode(west->x, east->y, west->width + void_area->width, iheight); //fill in extend node
-			GridLock--;
+			//subdivide west; new node to be exrended eastward so that it is south of filler
+			tsouth = CreateEmptyNode(west->x, east->y, west->width + filler->width, iheight); //filer->south
+			twest = find(west->x -1, tsouth->y-1);
+			gridLock++;
+			//link in tsouth
+			tsouth->north = filler;
+			tsouth->east = east;
+			tsouth->south = west->south; 
+			tsouth->west = west->west;
+			//shrink west northward
+			west->height -= tsouth->height;
+			west->south = tsouth;
+			west->west = twest;
+			//shrink filler northward
+			filler->height -= tsouth->height;
+			filler->south = tsouth;
+			filler->west =  west;
+		
+			update_grid(tsouth, tsouth);
+			update_all_boundries(tsouth);
+			gridLock--;
 			return west;
 		}
 
@@ -426,30 +526,188 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* void_
 		if(east->y == west->y)
 		{
 			iheight = (east->height < west->height)? east->height : west->height ;
-			CreateEmptyNode(void_area->x, west->y, void_area->width, iheight );
+			tsouth = CreateEmptyNode(filler->x, west->y, filler->width, iheight); //filler->south
+			gridLock++;
+			//link in tsouth
+                        tsouth->north = filler;
+                        tsouth->east = east;
+                        tsouth->south = filler->south;
+                        tsouth->west = west;
+                        //shrink filler northward
+                        filler->height -= tsouth->height;
+                        filler->south = tsouth;
+                        filler->west = west->north;  
+
+                        update_grid(tsouth, tsouth);
+                        update_all_boundries(tsouth);
+			gridLock--;
 			return west->north; //move up one node
 		}
-		else if(east->y < west->y)
+		else if(east->y < west->y)//east is higher than west
 		{
 			iheight = (east->y + east->height < west->y + west->height) ?
 				east->y + east->height - west->y :
 				west->height;
-			CreateEmptyNode(void_area->x, west->y, void_area->width, iheight );
-			return combine_ew(east, west->north, void_area); //still need work on east, with new west
+			retnode = west->north;
+			tsouth = CreateEmptyNode(filler->x, west->y, filler->width, iheight ); //filler->south
+	        	
+			gridLock++;
+                        //link in tsouth
+                        tsouth->north = filler;
+                        tsouth->east = east;
+                        tsouth->south = filler->south;
+                        tsouth->west = filler->west;
+                        //shrink filler northward
+                        filler->height -= tsouth->height;
+                        filler->south = tsouth;
+                        filler->west = west->north;
+
+                        update_grid(tsouth, tsouth);
+                        update_all_boundries(tsouth);
+			gridLock--;
+			return combine_ew(east, retnode, filler); //still need work on east, with new west
 
 		}
-		else //if(east->y > west->y)
+		else //if(east->y > west->y) //west is higher than east
 		{
 			iheight = (east->y + east->height < west->y + west->height) ? 
 				east->height : 
 				west->y + west->height - east->y ;
-			CreateEmptyNode(void_area->x, east->y, void_area->width, iheight );
+			tsouth = CreateEmptyNode(filler->x, east->y, filler->width, iheight ); //filler->south
+			
+			gridLock++;
+                        //link in tsouth
+                        tsouth->north = filler;
+                        tsouth->east = east;
+                        tsouth->south = filler->south;
+                        tsouth->west = filler->west;
+                        //shrink filler northward
+                        filler->height -= tsouth->height;
+                        filler->south = tsouth;
+                        filler->west = west;
+
+                        update_grid(tsouth, tsouth);
+                        update_all_boundries(tsouth);
 			return west; 
 		}
 	}
-	return NULL;
+	return NULL; //error - should not reach here
+}
+/*
+int MoveNode()
+{
+	int ecum_sum, esize_index, fail_count;
+	int node_index;	
+	struct node *move, *moveto;
+
+	esize_index = LogTwo(move->width);
+	//find cumlative sum
+	for(ecum_size=0; esize_index < eNodeListSize; esize_index++){ ecum_size+=EmptyNodeCnt[esize_index];}
+	
+	//pick random empty node to insert move in
+	//nodes are unweighted - each has a same chance of being chosen despite area
+	//this allows for smaller fragmentation
+	moveto = NULL;
+	for(fail_count = 0; moveto!=NULL && fail_count<ecum_size*10; fail_count++) 
+	{
+		node_index = (rand()%ecum_sum);
+		//move to size list
+		for(esize_index = eNodeListSize-1; 
+			node_index - EmptyNodeCnt[esize_index] > 0; 
+			esize_index--)
+		{node_index-=EmptyNodeCnt[esize_index];}
+		//go to node number in list
+		for(moveto=EmptyNodeList[esize_index]; 
+			node_index > 0; 
+			node_index--)
+		{
+			assert(moveto!=NULL);
+			moveto = moveto->e_next;
+		}
+		assert(moveto!=NULL);
+		if(moveto->width < move->width)
+		{
+			moveto = NULL;
+			fail_count++;
+		}	
+	}
+	if(moveto == NULL){ return -1;} //high chance every node was tried - sorry
+	
+	
+	
+	
+}*/
+
+int MoveRandom(struct node* move)
+{
+	struct node* blocking;
+	int x,y,err;
+	//remove
+	remove_node(move);
+	//find random spot
+	x = rand()%(RowWidth-move->width);
+	do
+	{
+		y = rand()%NumRows;	
+	}while(GridHdr[y]->coordinate + move->height > GridHdr[NumRows]->coordinate);
+	y = GridHdr[y]->coordinate;
+
+	while((blocking=InsertNode(move, x, y, err))!=NULL)
+	{
+		MoveLocal(blocking, move); //move any nodes in the way
+        }
+                        
+
 }
 
+int MoveLocal(struct node* move, struct node* keepout)
+{
+	struct node* blocking;
+	int err;
+	int direction;
+	
+	direction = rand()%4;//NESW
+	
+	remove_node(move);
+	while(1)
+		switch(direction)
+		{
+			case '0': //move north
+				while((blocking=InsertNode(move, move->x, keepout->y - move->height, err))!=NULL)
+				{
+					MoveLocal(blocking, move); 
+				}
+			break;
+			case '1': //move east
+			
+				while((blocking=InsertNode(move, keepout->x+keepout->width, move->y, err))!=NULL)
+				{
+				MoveLocal(blocking, move); 
+				}
+			break;
+			case '2': //move south
+				while((blocking=InsertNode(move, move->x, keepout->y + keepout->height, err))!=NULL)
+				{	
+					MoveLocal(blocking, move); 
+				}
+			break;
+			case '3': //move west
+				while((blocking=InsertNode(move, keepout->x-move->width, move->y, err))!=NULL)
+				{
+					MoveLocal(blocking, move); 
+				}
+			break;
+			default:
+				err = -1;
+				break;
+		}
+		if(err>=0){ break;} //exit from while loop
+		//out of bound or default case
+		direction = rand()%4;
+	}
+	return 0;
+			
+}
 struct node* create_filler_node(struct node* copy)
 {
 	struct node* filler;
@@ -512,7 +770,7 @@ struct node* find(int x, int y)
 	
 	int i,j;
 	struct node* start, position;
-	assert(GridLock==0);
+	assert(gridLock==0);
 	i = y/AvgRowHeight;
         j = x/GRID_GRAIN;
         while(GridHdr[i]->coordinate > y){i--;}; //move to proper row in case of poor avg height
@@ -621,5 +879,4 @@ void update_boundry(struct node* center, char orient)
 			assert(false);
 			break;
 	}
-	return;
 }

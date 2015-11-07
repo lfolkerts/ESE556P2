@@ -68,36 +68,27 @@ int main(int argc, char **argv) {
 	extern int optind;
 	int arg_num; //maintaining control of command line options
 	char opt; //command line options
-	int i, trial, tmp; //for loop counters
+	int i, trial, f_no; //for loop counters
 	int results[NUM_TRIALS][STAT_MAX], ignore;
 	int param;
-	char file_no[2];
 	char sf_nodes[SF_L+5], sf_nets[SF_L+4], sf_pl[SF_L+2], sf_scl[SF_L+3], sf_wcl[SF_L+3];
 
 
-	ACnt = BCnt = 0; //count of nodes in each partition
-	CMin = 0; //minimum intdex of bucket list
 #ifdef SEED_RANDOM
 	srand(time(NULL));
 #endif
 	gettimeofday(&tv_start, NULL);
-	param = 0;
+	f_no = 1;
 
 	/*Process through options */
-	while ((opt = getopt (argc, argv, "ph:")) != EOF)
+	while ((opt = getopt (argc, argv, "th:")) != EOF)
 	{
 		switch (opt)
 		{
 			case 't':
-				tmp = atoi(argv[optind-1]);
-				if(tmp>18 || tmp<=0){  fprintf(stderr, "Illegal Test Number\r\n", argv[optind]);	goto exit; }
+				f_no = atoi(argv[optind-1]);
+				if(f_no>18 || f_no<=0){  fprintf(stderr, "Illegal Test Number\r\n", argv[optind]);	goto exit; }
 
-				sf_no[0] = '0' + (tmp/10);
-				sf_no[1] = '0' + (tmp%10);
-
-			case 'p': 
-				param = atoi(argv[optind-1]);
-				break;
 			case 'h':
 				help();
 				return_code=0;
@@ -113,17 +104,17 @@ int main(int argc, char **argv) {
 		}
 	}
 	/******************************** Open Files *************************************************/
-	strcpy(sf_nodes, "ibm", 3); 	strcpy(sf_nodes[3], sf_no, SF_LEN-5); 	str_cpy(sf_nodes[SF_LEN-2], ".nodes", 2+5);
-	strcpy(sf_nets, "ibm", 4);	strcpy(sf_nETS[3], sf_no, SF_LEN-5); 	str_cpy(sf_nets[SF_LEN-2], ".nets", 2+4);
-	strcpy(sf_pl, "ibm", 2);  	strcpy(sf_pl[3], sf_no, SF_LEN-5); 	str_cpy(sf_pl[SF_LEN-2], ".pl", 2+2);
-	strcpy(sf_scl, "ibm", 3); 	strcpy(sf_scl[3], sf_no, SF_LEN-5); 	str_cpy(sf_scl[SF_LEN-2], ".scl", 2+3);
-	strcpy(sf_wcl, "ibm", 3); 	strcpy(sf_wcl[3], sf_no, SF_LEN-5); 	str_cpy(sf_wcl[SF_LEN-2], ".wcl", 2+3);
+	sprintf(sf_nodes, "ibm%2d.nodes", f_no);
+	sprintf(sf_nets, "ibm%2d.nets", f_no);
+	sprintf(sf_pl, "ibm%2d.pl", f_no);
+	sprintf(sf_scl, "ibm%2d.scl", f_no);
+	sprintf(sf_wcl, "ibm%2d.wcl", f_no);
 
 	f_nodes = fopen(sf_nodes, "r");
-	f_nets = fopen(sf_nodes, "r");
-	f_pl = fopen(sf_nodes, "r");
-	f_pl = fopen(sf_nodes, "r");
-	f_wcl = fopen(sf_nodes, "r");
+	f_nets = fopen(sf_nets, "r");
+	f_pl = fopen(sf_pl, "r");
+	f_scl = fopen(sf_scl, "r");
+	f_wcl = fopen(sf_wcl, "r");
 
 
 	/************************ Allocate Memory ********************************************************/
@@ -131,64 +122,34 @@ int main(int argc, char **argv) {
 	Modules = get_next_int(f_nodes); //number of nodes
 	PadOffset = get_next_int(f_nodes); //terminal offset
 	do{N_Arr = malloc((Modules+1)*sizeof(struct node*));} while(N_Arr==NULL);
-	generate_node(f_nodes); //store size of each node
+	GenerateNodes(f_nodes); //store size of each node
 
 	//fnets - neet to genertate the netlist graph 
 	nets = get_next_int(f_nets);
 	pins = get_next_int(f_nets);
-	generate_netlist(f_nets);
+	GenerateNetlist(f_nets);
+	
+	GenertatePlacement(f_pl);
+	GenerateGrid(f_scl);
 
-
-	stat_init(STAT_BENCHMARK);
-	stat_init(STAT_IMPROVEMENT);
-	stat_init(STAT_FINAL);
-	stat_init(STAT_TIME);
 
 #ifdef DEBUG
 	fprintf(stderr, "Pins %d\t Nets %d\tModules %d\tPadOffset %d\n", pins, nets, Modules, PadOffset);
-	fprintf(stderr, "Generating Netlist\n");	
-#endif
-#ifdef DEBUG
-	fprintf(stderr, "Finished Generating netlist\n");
 #endif
 	gettimeofday(&tv_init, NULL);
 
 #ifdef TIME_REPORT
 	fprintf(stdout, "Init Done: %ldus\n", ((tv_init.tv_sec - tv_start.tv_sec)*S2US + tv_init.tv_usec - tv_start.tv_usec));
 #endif
-
-	for(trial = 0; trial < NUM_TRIALS; trial++)
-	{
 #ifdef DEBUG
-		fprintf(stderr, "%d: Generating initil partitions\n", trial);
+        fprintf(stderr, "%d: Creating initial placement \n", trial, benchmark);
 #endif
-		shuffle_partition();
-
-		gettimeofday(&tv_init, NULL);
-		//generate bucket list; calclcate benchmark
+	for(i=0; i<
+		
 #ifdef DEBUG
-		fprintf(stderr, "%d: Generating benchmark\n", trial);
+	fprintf(stderr, "%d: Creating better placement \n", trial, benchmark);
 #endif
-
-		TestCost = 0;
-		//benchmark = 0;
-		for(i=0; i<=Modules; i++)
-		{
-			if(N_Arr[i]==NULL){continue;}
-			/*benchmark +=*/ cost(N_Arr[i]);
-		}
-		//E_costs = E_diff - E_sim; E_ denotes sum of
-		//2*nets*modules = E_diff + E_sim;
-		// E_sim = E_diff + E_costs = 2*nets*modules - E_diff ->
-		//E_diff*2 = E_costs*modules + 2*nets 
-		//E_diff/2 = cut set size 
-		//benchmark = (benchmark+2*nets*modules)/4; //cutset size
-		benchmark = TestCost/2;
-
-#ifdef DEBUG
-		fprintf(stderr, "%d: Creating better partition \n", trial, benchmark);
-#endif
-		fm_algorithm(); //do algorithm
+	sa_algorithm(); //do algorithm
 #ifdef DEBUG
 		fprintf(stderr, "%d: Analyzing Results\n", trial);
 #endif
@@ -221,7 +182,6 @@ int main(int argc, char **argv) {
 		fprintf(stdout, "Trial%d:\n\t%d initial cutsize\n\t%d improvement in cutsize\n\t%d cutsize\n\t%d us\n\n", trial, results[trial][STAT_BENCHMARK],results[trial][STAT_IMPROVEMENT], results[trial][STAT_FINAL], results[trial][STAT_TIME]);
 #endif
 
-	}
 
 	//report
 	i = stat_report_min(&ignore, STAT_FINAL);
@@ -332,6 +292,129 @@ void fm_algorithm()
 		n = NULL;
 
 	}//end while{ CMax> Offset) loop
+}
+
+
+
+/*********************************************** Cost function ************************************************/
+int cost(struct node* n)
+{
+	int s_in=0, d_in=0; //same partition in, different partition in
+	int s_flag, d_flag; //same flag/different flag for chyperedge children
+	int cost, cost_mod; //cost and modified cost
+	char part;
+	struct node* bucket;
+	struct edge *e;
+	struct hyperedge* h;
+
+	if(n==NULL) return 0;
+
+	part = n->part; //make it a little faster
+
+	//inputs
+#ifdef DEBUG_VB_COST
+	fprintf(stderr, "II");
+#endif
+	e = n->birth;
+	while(e!=NULL) //iterate through node inputs to determine where parents are
+	{
+#ifdef DEBUG_VB_COST
+		fprintf(stderr, ".");
+#endif
+
+		if(e->parent->out->part == part){ s_in++; }
+		else { d_in++;};
+		e = e->foster; //move to next input
+	} 
+
+	//outputs
+	h = n->out_head;
+#ifdef DEBUG_VB_COST
+	fprintf(stderr, "OI");
+#endif
+
+
+	while(h != NULL) //through each  output hyperedge of node
+	{
+#ifdef DEBUG_VB_COST
+		fprintf(stderr, ".");
+#endif
+		e = h->out_head;
+		s_flag = d_flag = 0;
+		while(e!=NULL) //through each edge of hyperedge
+		{
+			if(e->in->part == part){s_flag = 1;}
+			else{d_flag = 1;}
+			e = e->next;
+		}
+		s_in += (s_flag)?1:0;
+		d_in += d_flag?1:0;	
+
+		h = h->next;
+	}
+
+	cost = d_in - s_in;
+	TestCost += d_in;
+
+	//get cost_mod for p bucket index
+	cost_mod = cost + Offset;
+	cost_mod = (cost_mod>2*Offset) ? 2*Offset : cost_mod;
+	cost_mod  = (cost_mod<0) ? 0 : cost_mod;
+	CMin = (cost_mod < CMin)?cost_mod:CMin;
+	CMax = (cost_mod > CMax)?cost_mod:CMax;
+
+#ifdef DEBUG_VB_COST
+	fprintf(stderr, "\tCost: %c%d\t->\t%d-%d=%d\t%d\n", n->type, n->index, d_in, s_in, cost, cost_mod);
+#endif
+
+	//remove bucket
+	/*	if(n->pbucket == NULL) //head or uninitialized
+		{
+		BHead[n->cost]= n->nbucket; //disconnect head pointer from n
+		if(n->nbucket != NULL)	{ n->nbucket->pbucket = NULL;} //unlink next node from n
+		else if(BTail[n->cost] == n){BTail[n->cost] = NULL;} //only one node in list - unlink
+		}
+		else if(n->nbucket == NULL) //tail 
+		{
+		BTail[n->cost] = n->pbucket; //unlink tail pointer from node
+		n->pbucket->nbucket = NULL; //unlink node from n
+		}
+		else //normal removal
+		{
+		n->pbucket->nbucket = n->nbucket; //cut node out of double linked list
+		n->nbucket->pbucket = n->pbucket;
+		}
+	 */
+
+	if(BHead[n->cost] == n){ BHead[n->cost] = n->nbucket;} //disconnect head pointer from n
+	if(BTail[n->cost]==n) { BTail[n->cost] = n->pbucket;} //unlink tail pointer from n
+	if(n->pbucket!=NULL){n->pbucket->nbucket = NULL;} //unlink previous node from n
+	if(n->nbucket != NULL)  { n->nbucket->pbucket = NULL;} //unlink next node from n
+
+	//save cost, unlink node and append to new bucket
+	n->cost = cost_mod;
+	n->nbucket = n->pbucket = NULL;
+#ifdef DEBUG_VB_COST
+	fprintf(stderr, "Removed");
+#endif
+
+	if(n->locked >= LOCK_THRESH){return cost;} //we dont want to add locked nodes to this list
+	else if(BHead[cost_mod] == NULL) //no entry at this index yet
+	{
+		BHead[cost_mod] = BTail[cost_mod] = n;
+	}	
+	else if(BTail[cost_mod]==NULL) {BHead[cost_mod]=NULL;} //lost track of tail - FATAL
+	else{ 
+		//append to tail
+		BTail[cost_mod]->nbucket = n; //link last node in bucket list to n
+		n->pbucket = BTail[cost_mod]; //link n to bucket list
+		BTail[cost_mod] = n; //update tail
+	}
+#ifdef DEBUG_VB_COST
+	fprintf(stderr, "...Readded\n");
+#endif
+
+	return cost;
 }
 
 
