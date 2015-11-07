@@ -1,10 +1,10 @@
 struct grid_hdr** GridHdr;
-struct node *** Grid;
-struct node* RemoveStack;
+struct node *** Grid, GridCpy;
 struct node** EmptyNodeList;
 int* EmptyNodeCnt;
 int NumRows;
 int RowWidth;
+
 
 //variables unique to this module
 static char gridLock;
@@ -708,13 +708,42 @@ int MoveLocal(struct node* move, struct node* keepout)
 	return 0;
 			
 }
+void AcceptMove()
+{
+	struct node *n, *ncpy;
+	//copy modules
+	for(i=0; i<Modules; i++)
+	{
+		n = N_Arr[i];
+		ncpy = N_ArrCpy[i];
+		if(n==NULL){continue;}
+		assert(ncpy != NULL);
+		CopyParallelNode(n, ncpy);
+	}
+	//copy empty nodes
+	for(i=0; i<eNodeListSize; i++)
+        {
+		n = EmptyNodeList[i];
+                ncpy = EmptyNodeList[i];
+               	while(n!=NULL)
+		{
+                	assert(ncpy != NULL);
+	                CopyParallelNode(n, ncpy);
+			n = n->e_next;
+			ncpy = n->e_next;
+		}
+        }
+	//copy grid ptrs
+	
+}
+
 struct node* create_filler_node(struct node* copy)
 {
 	struct node* filler;
 	
 	do{filler = (struct node*) malloc(sizeof(node));}while(filler==NULL);
 	
-	copy_node(copy, filler);
+	CopyNode(copy, filler);
 	filler->type = 'f';
 	//replace filler in grid
 	update_grid(filler, filler);
@@ -727,41 +756,13 @@ struct node* create_expansion_node(struct node* copy)
 
         do{expand = (struct node*) malloc(sizeof(node));}while(expand==NULL);
 
-	copy_node(copy, expand);
+	CopyNode(copy, expand);
 	//shrink expand
 	expand->south = find(copy->x, copy->y);
 	expand->west = find(copy->x-1, copy->y-1);
         expand->type = 'F';
 	expand->height = 0;
         return expand;
-
-}
-
-void copy_node(struct node* original, struct node* copy)
-{	
-	assert(original != NULL &&  copy != NULL);
-	
-        copy->type = original->type; 
-        copy->index = original->index;
-        copy-> locked =  original ->locked; 
-        copy->cost = original->cost;
-        copy->birth = original->birth;
-        copy-> out_head original->outhead; 
-	copy->e_next = original->e_next;
-	copy-> e_prev = original->e_prev;
-        copy->dir = original->dir; 
-        copy->orientation = original->orientation;
-
-        copy->x = original->x; //x coordinate
-        copy->y = original->y;
-        copy->width = original->width;
-        copy->height = original->height;
-
-        //corner stitching
-        copy->north = original->north;
-        copy->south = original->south;
-        copy->east = original->east;
-        copy->west = original->west;
 
 }
 

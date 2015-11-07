@@ -62,7 +62,7 @@ int GenerateNodes(FILE* gno_file)
 		index_mod += (type=='p')?PadOffset:0;
 	
 		do{ n = malloc(sizeof(struct node));} while(n==NULL);
-
+		do{ n_cpy = malloc(sizeof(struct node))}while(n_cpy==NULL);
 		n->type = type;	
 		n->index = index;
 		n->locked = 0;
@@ -78,7 +78,7 @@ int GenerateNodes(FILE* gno_file)
 
 		assert(N_Arr[index_mod]==NULL);
 		N_Arr[index_mod] = n;
-	
+		N_ArrCpy[index_mod] = n_cpy;
 		endline();		
 	}
 }
@@ -93,16 +93,12 @@ int GenerateNetlist(FILE* gnt_file)
 	int i, index_mod, node_degree;	
 	char o_xflag, b_flag, p_flag; //output exclusive flag(only first node in set should be an output, unless pad), bidirectional flag, pad flag
 
-	ACnt = BCnt = 0;
-	CMin = 0;
-	CMax = Offset*2;
-
 	while((node_degree = GetNextInt(gnt_file))!= INT_MIN)
 	{
 
 		o_xflag = 0; p_flag = 0;
 		direction = '\0';
-		endline(gnt_file);
+		Endline(gnt_file);
 		for(i=0; i<node_degree; i++)
 		{
 			//Get information
@@ -110,7 +106,7 @@ int GenerateNetlist(FILE* gnt_file)
 			{
 				type = (char) fgetc(gnt_file);
 				if(type==EOF){return 1;}
-				if(type == '#'){ endline(gnt_file);continue;}	
+				if(type == '#'){ Endline(gnt_file);continue;}	
 			}while(!isalpha(type));
 			index_mod = GetNextInt(gnt_file);
 			if(type=='p')
@@ -308,6 +304,19 @@ int GenerateGrid(FILE* gg_file)
 	NumRows = num_rows;
 			
 	return 0;
+}
+
+void PopulateCopy()
+{
+	struct node *n, *ncpy;
+	for(i=0; i<Modules; i++)
+	{
+		n = N_Arr[i];
+		ncpy = N_ArrCpy[i];
+		if(n==NULL){continue;}
+		assert(ncpy!=NULL);
+		CopyNode(n, n_cpy);
+	}
 }
 
 void memfree()

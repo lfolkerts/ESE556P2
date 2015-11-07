@@ -59,3 +59,31 @@ int cost(struct node* n, int org_x, int org_y)
 }
 
 
+void CopyNode(struct node* original, struct node* copy)
+{
+        assert(original != NULL &&  copy != NULL);
+
+        copy->type = original->type;
+        copy->index = original->index;
+        copy-> locked =  original ->locked;
+        copy->cost = original->cost;
+        copy->birth = original->birth;
+        copy-> out_head original->outhead;
+        copy->e_next = original->e_next;
+        copy-> e_prev = original->e_prev;
+        copy->dir = original->dir;
+        copy->orientation = original->orientation;
+
+        copy->x = original->x; //x coordinate
+        copy->y = original->y;
+        copy->width = original->width;
+        copy->height = original->height;
+
+        //corner stitching
+        copy->north = original->north;
+        copy->south = original->south;
+        copy->east = original->east;
+        copy->west = original->west;
+
+}
+
