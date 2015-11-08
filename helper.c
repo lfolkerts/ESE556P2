@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
+#include  <fcntl.h>
+#include <assert.h>
+#include <limits.h>
 #include "node.h"
 #include "helper.h"
 
@@ -70,6 +73,7 @@ int GetNextInt(FILE* gni_file)
 	{
 		if(s[0] == '#') { Endline(gni_file); } //remove file
 		if(s[0] == '-') { negative_flag = 1; }
+		if(s[0] == EOF) { return INT_MIN; }
 		else { negative_flag = 0; }
 	}
 	for(i=1; i<10 && isdigit(s[i] = (char)fgetc(gni_file)); i++);
@@ -92,20 +96,19 @@ char GetSymmetry(FILE* gs_file)
 /************* get_line ********************
  * Gets one line from infile
  *
- * returns length of line on sucess, negative value on error
  **************************************************/
 int  Endline(FILE* el_file)
 {
 	unsigned char c[1];
-	int i, err;
+	int err;
 
 	while(1) //avoid end of file and line
 	{
 		*c = fgetc(el_file);
-		if(*c=='\n' || *c == EOF) break;
+		if(*c=='\n'){ return 0; }
+		if(*c == EOF){ return -1;}
 	}
 
-	return i;
 }
 
 

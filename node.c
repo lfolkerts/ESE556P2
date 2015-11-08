@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
+#include <assert.h>
 #include"parameters.h"
 #include "node.h"
 #include "helper.h"
@@ -12,7 +13,7 @@
 * This function will recalculate the cost of node n and modify the costs of surrounding nodes
 * It will return the delta cost for node n
 ***************************************************/
-int cost(struct node* n, int org_x, int org_y)
+int Cost(struct node* n, int org_x, int org_y)
 {
 	int s_in=0, d_in=0; //same partition in, different partition in
 	int s_flag, d_flag; //same flag/different flag for chyperedge children
@@ -35,7 +36,7 @@ int cost(struct node* n, int org_x, int org_y)
 		cost += abs(e->parent->out->x - n->x);
 		//y
 		cost_mod += abs(e->parent->out->y - org_y) - abs(e->parent->out->y - n->y);
-                cost += abs(e->parent->out->y - n->y)
+                cost += abs(e->parent->out->y - n->y);
 
 		e->parent->out->cost -= cost_mod;
 		e = e->foster; //move to next input
@@ -55,7 +56,7 @@ int cost(struct node* n, int org_x, int org_y)
                		cost += abs(e->in->x - n->x);
         	        //y
 	               	cost_mod += abs(e->parent->out->y - org_y) - abs(e->parent->out->y - n->y);
-        	        cost += abs(e->parent->out->y - n->y)
+        	        cost += abs(e->parent->out->y - n->y);
 	
 	                e->in->cost -= cost_mod;
 			e = e->next;
@@ -65,7 +66,7 @@ int cost(struct node* n, int org_x, int org_y)
 	}
 	n->cost = cost;
 
-`	return cost_original - cost;
+	return cost_original - cost;
 }
 
 
@@ -78,7 +79,7 @@ void CopyNode(struct node* original, struct node* copy)
         copy-> locked =  original ->locked;
         copy->cost = original->cost;
         copy->birth = original->birth;
-        copy-> out_head original->outhead;
+        copy-> out_head =  original->out_head;
         copy->e_next = original->e_next;
         copy-> e_prev = original->e_prev;
         copy->dir = original->dir;
@@ -104,7 +105,7 @@ void CopyParallelNode(struct node* original, struct node* copy)
 	assert(original->type == 'a');
 	assert(original == N_Arr[original->index]); //make sure original is in the main set, not the copy set
 	
-	CopyNode(original, copy)
+	CopyNode(original, copy);
 	
         //corner stitching
         copy->north = N_ArrCpy[original->north->index];
@@ -120,7 +121,7 @@ void RestoreParallelNode(struct node* original, struct node* copy)
         assert(original->type == 'a');
         assert(original == N_ArrCpy[original->index]); //make sure original is in the copy set
 
-        CopyNode(original, copy)
+        CopyNode(original, copy);
 
         //corner stitching
         copy->north = N_Arr[original->north->index];

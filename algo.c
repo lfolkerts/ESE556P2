@@ -6,6 +6,7 @@
 #include<stdint.h>
 #include <ctype.h>
 #include <math.h>
+#include <assert.h>
 #include "parameters.h"
 #include "generate_data.h"
 #include "grid.h"
@@ -51,11 +52,11 @@ int main(int argc, char **argv) {
 		switch (opt)
 		{
 			case 't':
-				f_no = atoi(argv[optind-1]);
-				if(f_no>18 || f_no<=0){  fprintf(stderr, "Illegal Test Number %s\r\n", argv[optind]);	goto exit; }
+				f_no = atoi(argv[optind]);
+				if(f_no > 18 || f_no <= 0){  fprintf(stderr, "Illegal Test Number %d\r\n", f_no);	goto exit; }
 
 			case 'h':
-				help();
+				Help();
 				return_code=0;
 				goto exit;
 				//break;
@@ -63,17 +64,17 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
 				fprintf(stderr, "Error: unrecognized argument %s\r\n", argv[optind]);
 #endif
-				request_help();
+				RequestHelp();
 				return_code = -1;
 				goto exit;
 		}
 	}
 	/******************************** Open Files *************************************************/
-	sprintf(sf_nodes, "ibm%2d.nodes", f_no);
-	sprintf(sf_nets, "ibm%2d.nets", f_no);
-	sprintf(sf_pl, "ibm%2d.pl", f_no);
-	sprintf(sf_scl, "ibm%2d.scl", f_no);
-	sprintf(sf_wcl, "ibm%2d.wcl", f_no);
+	sprintf(sf_nodes, "%sibm%02d/ibm%02d.nodes", TEST_DIR, f_no, f_no);
+	sprintf(sf_nets, "%sibm%02d/ibm%02d.nets", TEST_DIR, f_no, f_no);
+	sprintf(sf_pl, "%sibm%02d/ibm%02d.pl", TEST_DIR, f_no, f_no);
+	sprintf(sf_scl, "%sibm%02d/ibm%02d.scl", TEST_DIR, f_no, f_no);
+	sprintf(sf_wcl, "%sibm%02d/ibm%02d.wcl", TEST_DIR, f_no, f_no);
 
 	f_nodes = fopen(sf_nodes, "r");
 	f_nets = fopen(sf_nets, "r");
@@ -81,12 +82,14 @@ int main(int argc, char **argv) {
 	f_scl = fopen(sf_scl, "r");
 	f_wcl = fopen(sf_wcl, "r");
 
-
+#ifdef DEBUG_VB_ALGO
+	fprintf(stderr, "Opened Files:\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n", sf_nodes, sf_nets, sf_pl, sf_scl, sf_wcl);
+#endif
 	/************************ Allocate Memory ********************************************************/
 	//read from files and generate initial data structures based on info
 	GenerateNodes(f_nodes); 
 	GenerateNetlist(f_nets);
-	GenertatePlacement(f_pl);
+	GeneratePlacement(f_pl);
 	GenerateGrid(f_scl);
 	InitOverlapGrid();
 	InitGrid();
@@ -135,8 +138,6 @@ int main(int argc, char **argv) {
 	 fprintf(stdout, "Cost: %d\nImprovement: %d\nTime: %ld\n", cost, cost_org - cost, (tv_done.tv_sec - tv_start.tv_sec)*S2US + tv_done.tv_usec - tv_start.tv_usec);
 #endif
 
-	//free memory
-	memfree();
 close_files:
 
 exit:
@@ -168,11 +169,11 @@ void sa_algorithm_no_overlap(int iterations)
                         else{acceptance = 0; } //guarenteed acceptance
                         if(rand()%RAND_PRECISION > acceptance)
                         {
-                                AcceptMoveOverlap();
+                                AcceptOverlapMove();
                         }
                         else
                         {
-                                RejectMoveOverlap();
+                                RejectOverlapMove();
                         }
                 }
                 update_iterations(&iterations);
@@ -205,11 +206,11 @@ void sa_algorithm_shift(int iterations)
                         else{acceptance = 0; } //guarenteed acceptance
                         if(rand()%RAND_PRECISION > acceptance)
                         {
-                                AcceptMoveOverlap();
+                                AcceptOverlapMove();
                         }
                         else
                         {
-                                RejectMoveOverlap();
+                                RejectOverlapMove();
                         }
                 }
                 update_iterations(&iterations);
@@ -240,11 +241,11 @@ void sa_algorithm_overlap(int iterations)
 			else{acceptance = 0; } //guarenteed acceptance
 			if(rand()%RAND_PRECISION > acceptance)
 			{	
-				AcceptMove();
+				AcceptOverlapMove();
 			}
 			else
 			{ 
-				RejectMove(); 
+				RejectOverlapMove(); 
 			}
 		}
 		update_iterations(&iterations);

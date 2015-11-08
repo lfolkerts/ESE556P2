@@ -4,6 +4,7 @@
 #include<stdint.h>
 #include <ctype.h>
 #include <limits.h>
+#include <assert.h>
 #include <wand/MagickWand.h>
 #include"parameters.h"
 #include "node.h"
@@ -12,6 +13,7 @@
 void writeImage(char* image_filename)
 {
 	struct node* n;
+	int i;
 	MagickWand *m_wand = NULL;
 	DrawingWand *d_wand = NULL;
 	PixelWand *c_wand = NULL;
@@ -34,9 +36,9 @@ void writeImage(char* image_filename)
 	DrawSetStrokeColor(d_wand,c_wand);
 	DrawSetStrokeWidth(d_wand,0);
 	DrawSetStrokeAntialias(d_wand,1);
-	for(i=0; i<NumNodes; i++)
+	for(i=0; i<Modules; i++)
 	{
-		n = Node[i];
+		n = N_Arr[i];
 		PixelSetColor(c_wand,"red");
 		//DrawSetStrokeOpacity(d_wand,1);
 		DrawSetFillColor(d_wand,c_wand);

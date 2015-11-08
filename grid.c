@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
+#include <assert.h>
 #include"parameters.h"
 #include "grid.h"
 #include "node.h"
@@ -14,6 +15,7 @@ int emptyNodeCnt, emptyNodeCntCpy;
 //local functions
 int get_new_empty_node_id();
 void listremove_empty_node(struct node* remove);
+void listremove_empty_nodecpy(struct node* remove);
 void remove_node(struct node* remove);
 struct node* combine_ew(struct node* east, struct node* west, struct node* filler);
 struct node* create_filler_node(struct node* copy);
@@ -93,13 +95,21 @@ struct node* CreateEmptyNode(int x, int y, int height, int width)
 	EmptyNodeList[n->index] = n;
 	return n;
 }
-
 void listremove_empty_node(struct node* remove)
+{
+        int index;
+        assert(remove!=NULL);
+        emptyNodeIDCpy = remove->index;
+        EmptyNodeList[remove->index] = NULL;
+        free(remove);
+}
+
+void listremove_empty_nodecpy(struct node* remove)
 {
 	int index;
 	assert(remove!=NULL);
-	emptyNodeID = remove->index;
-	EmptyNodeList[remove->index] = NULL;
+	emptyNodeIDCpy = remove->index;
+	EmptyNodeListCpy[remove->index] = NULL;
 	free(remove);
 }
 /***************************************************************
@@ -348,7 +358,7 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* fille
 			filler->south = west;
 			filler->west = twest;
 
-			update_grid_ptr(west, west); //fix grid ptrs
+			update_grid(west, west); //fix grid ptrs
 			update_all_boundries(west);// fix corner stitching TO west
 			gridLock--;
 		
@@ -372,7 +382,7 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* fille
 			filler->south = west;
 			filler->west = west->north;
 			
-			update_grid_ptr(west, west);  //fix grid ptrs
+			update_grid(west, west);  //fix grid ptrs
 			update_all_boundries(west);// fix corner stitching TO west
 			gridLock--;
 			return combine_ew(east, retnode, filler); //need to perform operation on east again
@@ -395,7 +405,7 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* fille
 			filler->south = east;
 			filler->west = west;
 	
-			update_grid_ptr(east, east); //fix grid ptrs
+			update_grid(east, east); //fix grid ptrs
 			update_all_boundries(east);// fix corner stitching TO east
 			gridLock--;
 			return west;
@@ -416,7 +426,7 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* fille
 			filler->west = west->north;
 			filler->south = east;
 			
-			update_grid_ptr(east, east); //fix grid ptrs
+			update_grid(east, east); //fix grid ptrs
 			update_all_boundries(east);// fix corner stitching TO east
 			gridLock--;
 			return west->north; //move up one node
@@ -814,7 +824,7 @@ struct node* create_filler_node(struct node* copy)
 	filler->type = 'f';
 	//replace filler in grid
 	update_grid(filler, filler);
-	update_all_boudries(filler); //point all nodes to filler
+	update_all_boundries(filler); //point all nodes to filler
 	return filler;
 }
 struct node* create_expansion_node(struct node* copy)
