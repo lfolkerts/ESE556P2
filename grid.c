@@ -1,17 +1,30 @@
-struct grid_hdr** GridHdr;
-struct node *** Grid, GridCpy;
-struct node** EmptyNodeList, EmptyNodeListCpy;
-int NumRows;
-int RowWidth;
+#include <stdio.h>
+#include <stdlib.h>
+#include<stdint.h>
+#include <ctype.h>
+#include"parameters.h"
+#include "grid.h"
+#include "node.h"
 
 //variables unique to this module
 static char gridLock;
 int emptyNodeID, emptyNodeIDCpy;
 int eNodeListSize;
 int emptyNodeCnt, emptyNodeCntCpy;
+//local functions
+int get_new_empty_node_id();
+void listremove_empty_node(struct node* remove);
+void remove_node(struct node* remove);
+struct node* combine_ew(struct node* east, struct node* west, struct node* filler);
+struct node* create_filler_node(struct node* copy);
+struct node* create_expansion_node(struct node* copy);
+struct node* find(int x, int y);
+void update_grid(struct node* update, struct node* replace);
+void update_all_boundries(struct node* n);
+void update_boundry(struct node* center, char orient);
 
 void InitGrid()
-{`
+{
 	gridLock = -1;
 }
 void FillGrid()
@@ -22,7 +35,7 @@ void FillGrid()
 	//first make entire grid empty
 	n = CreateEmptyNode(0,0,GridHdr[NumRows]->coordinate, RowWidth); //create and empty Node
 	n->north = n->south = n->east = n->west = NULL;
-	update_grid(n);
+	update_grid(n, n);
 	
 	for(i=Modules - PadOffset; i>=0; i--)
 	{
@@ -31,7 +44,7 @@ void FillGrid()
 		while((blocking=InsertNode(n, n->x, n->y, &err))!=NULL)
 		{
 			if(err !=0){n->x--;}
-			MoveLocal(blocking, move);
+			MoveLocal(blocking, n);
 		}
 	}
 	
@@ -39,6 +52,7 @@ void FillGrid()
 }
 void InitEmptyNodeList(int size)
 {
+	int i;
 	eNodeListSize = size;
 	do{ EmptyNodeList = (struct node**) malloc(eNodeListSize * sizeof(struct node*)); }while(EmptyNodeList==NULL);
 	do{ EmptyNodeListCpy = (struct node**) malloc(eNodeListSize * sizeof(struct node*)); }while(EmptyNodeList==NULL);
@@ -49,11 +63,11 @@ void InitEmptyNodeList(int size)
 	emptyNodeID = 0;
 	emptyNodeCnt = 0;
 }
-int getNewEmptyNodeID()
+int get_new_empty_node_id()
 {
 	while(EmptyNodeList[emptyNodeID]!=NULL){emptyNodeID++; }
 	emptyNodeCnt = (emptyNodeID>emptyNodeCnt)?emptyNodeID:emptyNodeCnt;
-	assert(eNodeListSize>EmptyNodeCnt);
+	assert(eNodeListSize>emptyNodeCnt);
 	return emptyNodeID;
 }
 
@@ -61,14 +75,14 @@ struct node* CreateEmptyNode(int x, int y, int height, int width)
 {
 	struct node* n, *move;
 
-	do{n = (struct node*) malloc(sizeof(node));} while(n==NULL); //create node
+	do{n = (struct node*) malloc(sizeof(struct node));} while(n==NULL); //create node
 
 	n->type  = 'e'; //empty
-	n->index = getNewEmptyNodeID(); //not used for now
+	n->index = get_new_empty_node_id(); //not used for now
 	n->locked = 0;
 	n->cost = 0;
 	n->birth = NULL;
-	n->outhead = NULL;
+	n->out_head = NULL;
 	n->orientation = OR_N;
 
 	n->x = x;
@@ -96,10 +110,14 @@ void listremove_empty_node(struct node* remove)
 ****************************************************************/
 struct node * InsertNode(struct node* insert, int x, int y, int* err)
 {
-	struct node* replace;
+	struct node* replace, *expand, *new_node;
 	struct node *north, *south, *east, *west;
 	int gindexy, gindexy_original, gindexy_stop;
+	int xorg, yorg;
+	int i;
 
+	xorg = insert->x;
+	yorg = insert->y;
 	//get to starting row
 	gindexy = y/AvgRowHeight;
 	while(GridHdr[gindexy]->coordinate > y){gindexy--;}
@@ -130,7 +148,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 		replace = find(replace->x, replace->y+replace->height);
                 if(replace == NULL){ break; }
                 while(GridHdr[gindexy+1]->coordinate < replace->y){ gindexy++; }	
-	}while(GridHdr[gindexy]->coordinate <= y + index->height);
+	}while(GridHdr[gindexy]->coordinate <= y + insert->height);
 	gindexy_stop = gindexy;
 	
 	/*********************************************************************
@@ -178,9 +196,9 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 	insert->west = find(x-1, y+insert->height-1);
 	//begin expansion node, which will maintain grid structure as we make way for insert
 	expand = create_expansion_node(insert);
-	gindexy=gindex_original;
+	gindexy=gindexy_original;
 	replace = find(x, GridHdr[gindexy]->coordinate);
-	while(GridHdr[gindexy]->coordinate <= y + index->height);
+	while(GridHdr[gindexy]->coordinate <= y + insert->height)
 	{
                 assert(replace!=NULL);
 		if(replace->x == x && replace->width == insert->width) //same x and width
@@ -223,7 +241,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
                         expand->south = south;
                         expand->west = replace;
                         
-			replace>width = x - replace->x; //shrink
+			replace->width = x - replace->x; //shrink
 			replace->north = north;
 			replace->east = expand;
   
@@ -250,14 +268,14 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 	assert(expand->height == insert->height); //other expand parameters were never changed
 	gridLock++;
 	assert(insert->north == expand->north);  
-	insert->east = expand->east //can be different in the case a new node was inserted
+	insert->east = expand->east; //can be different in the case a new node was inserted
 	assert(insert->south == expand->south); 
 	assert(insert->west == expand->west); //same; new nodes only inserted to the east
 
-	update_grid(insert, insert)
+	update_grid(insert, insert);
 	update_all_boundries(insert);
 	gridLock--;
-	*err = 0;
+	*err = Cost(insert, xorg, yorg);
 	return NULL;
 
 }
@@ -269,7 +287,7 @@ struct node * InsertNode(struct node* insert, int x, int y, int* err)
 void remove_node(struct node* remove)
 {
 	int i, j;
-	struct node* nearby, east, west;
+	struct node* nearby, *east, *west, *filler;
 
 	assert(remove->type != 'f' && remove->type != 'F');
 	//combine sorrrounding empty nodes, unlink pointers to remove node (recursive)
@@ -284,16 +302,13 @@ void remove_node(struct node* remove)
 	remove->north = NULL;
 	remove->east = NULL;
 	remove->west = NULL;
-	remove->x = INT_MAX;
-	remove->y = INT_MAX;
+	remove->south=NULL;
+	remove->x = INIT_X;
+	remove->y = INIT_Y;
 	
 	//next store in removed node stack
-	if(remove->type == 'e'){ listremove_empty_node(remove); }
-	else
-	{
-		remove->south = RemoveStack;
-		RemoveStack = remove;
-	}
+	if(remove->type == 'e'){ listremove_empty_node(remove);}
+		
 }
 
 /***************************************************************************************** 
@@ -595,55 +610,11 @@ struct node* combine_ew(struct node* east, struct node* west, struct node* fille
 	}
 	return NULL; //error - should not reach here
 }
-/*
-int MoveNode()
-{
-	int ecum_sum, esize_index, fail_count;
-	int node_index;	
-	struct node *move, *moveto;
-
-	esize_index = LogTwo(move->width);
-	//find cumlative sum
-	for(ecum_size=0; esize_index < eNodeListSize; esize_index++){ ecum_size+=EmptyNodeCnt[esize_index];}
-	
-	//pick random empty node to insert move in
-	//nodes are unweighted - each has a same chance of being chosen despite area
-	//this allows for smaller fragmentation
-	moveto = NULL;
-	for(fail_count = 0; moveto!=NULL && fail_count<ecum_size*10; fail_count++) 
-	{
-		node_index = (rand()%ecum_sum);
-		//move to size list
-		for(esize_index = eNodeListSize-1; 
-			node_index - EmptyNodeCnt[esize_index] > 0; 
-			esize_index--)
-		{node_index-=EmptyNodeCnt[esize_index];}
-		//go to node number in list
-		for(moveto=EmptyNodeList[esize_index]; 
-			node_index > 0; 
-			node_index--)
-		{
-			assert(moveto!=NULL);
-			moveto = moveto->e_next;
-		}
-		assert(moveto!=NULL);
-		if(moveto->width < move->width)
-		{
-			moveto = NULL;
-			fail_count++;
-		}	
-	}
-	if(moveto == NULL){ return -1;} //high chance every node was tried - sorry
-	
-	
-	
-	
-}*/
-
 int MoveRandom(struct node* move)
 {
 	struct node* blocking;
-	int x,y,err;
+	int x,y,err, cost;
+	cost = 0;
 	//remove
 	remove_node(move);
 	//find random spot
@@ -654,49 +625,78 @@ int MoveRandom(struct node* move)
 	}while(GridHdr[y]->coordinate + move->height > GridHdr[NumRows]->coordinate);
 	y = GridHdr[y]->coordinate;
 
-	while((blocking=InsertNode(move, x, y, err))!=NULL)
+	while((blocking=InsertNode(move, x, y, &err))!=NULL)
 	{
-		MoveLocal(blocking, move); //move any nodes in the way
+		cost += MoveLocal(blocking, move); //move any nodes in the way
         }
-                        
+	cost += err;
+	return cost;                        
 
 }
+int MoveShift(struct node* move)
+{
+        struct node* blocking;
+        int x,y,err, cost;
+        cost = 0;
+        //remove
+        remove_node(move);
+        //shift one spot up or down
+        x = move->x + rand()%3-2;
+	if(x != move->x){ y = move->y; }
+        else
+	{
+		do
+	        {
+        	        y = move->y/AvgRowHeight + rand()%5-3;
+	        }while(GridHdr[y]->coordinate + move->height > GridHdr[NumRows]->coordinate &&  GridHdr[y]->coordinate != move->y);
+        	y = GridHdr[y]->coordinate;
+	}
+        while((blocking=InsertNode(move, x, y, &err))!=NULL)
+        {
+                cost += MoveLocal(blocking, move); //move any nodes in the way
+        }
+        cost += err;
+        return cost;
+
+}
+
 
 int MoveLocal(struct node* move, struct node* keepout)
 {
 	struct node* blocking;
-	int err;
+	int err, cost;
 	int direction;
 	
 	direction = rand()%4;//NESW
 	
 	remove_node(move);
 	while(1)
+	{
 		switch(direction)
 		{
 			case '0': //move north
-				while((blocking=InsertNode(move, move->x, keepout->y - move->height, err))!=NULL)
+				while((blocking=InsertNode(move, move->x, keepout->y - move->height, &err))!=NULL)
 				{
-					MoveLocal(blocking, move); 
+					cost +=	MoveLocal(blocking, move); 
 				}
 			break;
 			case '1': //move east
 			
-				while((blocking=InsertNode(move, keepout->x+keepout->width, move->y, err))!=NULL)
+				while((blocking=InsertNode(move, keepout->x+keepout->width, move->y, &err))!=NULL)
 				{
-				MoveLocal(blocking, move); 
+					cost += MoveLocal(blocking, move); 
 				}
 			break;
 			case '2': //move south
-				while((blocking=InsertNode(move, move->x, keepout->y + keepout->height, err))!=NULL)
+				while((blocking=InsertNode(move, move->x, keepout->y + keepout->height, &err))!=NULL)
 				{	
-					MoveLocal(blocking, move); 
+					cost+=MoveLocal(blocking, move); 
 				}
 			break;
 			case '3': //move west
-				while((blocking=InsertNode(move, keepout->x-move->width, move->y, err))!=NULL)
+				while((blocking=InsertNode(move, keepout->x-move->width, move->y, &err))!=NULL)
 				{
-					MoveLocal(blocking, move); 
+					cost += MoveLocal(blocking, move); 
 				}
 			break;
 			default:
@@ -707,7 +707,8 @@ int MoveLocal(struct node* move, struct node* keepout)
 		//out of bound or default case
 		direction = rand()%4;
 	}
-	return 0;
+	cost += err;
+	return cost;
 			
 }
 void AcceptMove()
@@ -734,7 +735,7 @@ void AcceptMove()
 		{listremove_empty_nodecpy(ncpy); }
 		else if(n!=NULL && ncpy==NULL)
 		{
-			do{ncpy = malloc(sizeof(node))}while(ncpy==NULL);
+			do{ncpy = malloc(sizeof(struct node));}while(ncpy==NULL);
 			CopyParallelNode(n, ncpy);
 			EmptyNodeListCpy[ncpy->index] = ncpy;	
 		}
@@ -751,7 +752,7 @@ void AcceptMove()
 			n = Grid[i][j];
 			if(n->type == 'e'){ GridCpy[i][j] = EmptyNodeListCpy[n->index];}
 			else if(n->type == 'a'){ GridCpy[i][j] = N_ArrCpy[n->index];}
-			else if(n->type == 'p'){ GridCpy[i][j] = N_ArrCpy[n->index+PadOffest];}
+			else if(n->type == 'p'){ GridCpy[i][j] = N_ArrCpy[n->index+PadOffset];}
 		}
 	}
 }
@@ -780,7 +781,7 @@ void RejectMove() //same as accept move except swapped xx<->xxCpy
 		{listremove_empty_nodecpy(n); }
 		else if(ncpy!=NULL && n==NULL)
 		{
-			do{n = malloc(sizeof(node))}while(n==NULL);
+			do{n = malloc(sizeof(struct node));}while(n==NULL);
 			RestoreParallelNode(ncpy, n);
 			EmptyNodeList[n->index] = n;	
 		}
@@ -797,7 +798,7 @@ void RejectMove() //same as accept move except swapped xx<->xxCpy
 			ncpy = GridCpy[i][j];
 			if(ncpy->type == 'e'){ Grid[i][j] = EmptyNodeList[ncpy->index];}
 			else if(ncpy->type == 'a'){ Grid[i][j] = N_Arr[ncpy->index];}
-			else if(ncpy->type == 'p'){ Grid[i][j] = N_Arr[ncpy->index+PadOffest];}
+			else if(ncpy->type == 'p'){ Grid[i][j] = N_Arr[ncpy->index+PadOffset];}
 		}
 	}
 	
@@ -807,7 +808,7 @@ struct node* create_filler_node(struct node* copy)
 {
 	struct node* filler;
 	
-	do{filler = (struct node*) malloc(sizeof(node));}while(filler==NULL);
+	do{filler = (struct node*) malloc(sizeof(struct node));}while(filler==NULL);
 	
 	CopyNode(copy, filler);
 	filler->type = 'f';
@@ -820,7 +821,7 @@ struct node* create_expansion_node(struct node* copy)
 {
 	struct node* expand;
 
-        do{expand = (struct node*) malloc(sizeof(node));}while(expand==NULL);
+        do{expand = (struct node*) malloc(sizeof(struct node));}while(expand==NULL);
 
 	CopyNode(copy, expand);
 	//shrink expand
@@ -836,8 +837,9 @@ struct node* find(int x, int y)
 {
 	
 	int i,j;
-	struct node* start, position;
+	struct node* start, *position;
 	assert(gridLock==0);
+	if(x<0 || x>=RowWidth || y<0 || y>= GridHdr[NumRows]->coordinate){return NULL;} //out of bounds
 	i = y/AvgRowHeight;
         j = x/GRID_GRAIN;
         while(GridHdr[i]->coordinate > y){i--;}; //move to proper row in case of poor avg height
@@ -848,14 +850,14 @@ struct node* find(int x, int y)
 	while(1)
 	{
 		start = position;
-		if(position->y > y){ postion = positon->north;}
-		else if(position->y + position+height < y) { position = position->south; }
+		if(position->y > y){ position = position->north;}
+		else if(position->y + position->height < y) { position = position->south; }
 		if(position->x + position->width < x){ position = position->east;}
 		else if(position->x > x){position = position->west;}
 		
 		if(start == position){break;}
 	}
-	return postion;
+	return position;
 }
 
 void update_grid(struct node* update, struct node* replace)
@@ -874,19 +876,19 @@ void update_grid(struct node* update, struct node* replace)
 		{
 			if
 				(	update->y <=  GridHdr[i]->coordinate &&
-					(update->y + update->height) > GridHdr[i]->coordinate &&
+					update->y + update->height > GridHdr[i]->coordinate &&
 					update->x <= j*GRID_GRAIN &&
-					(update->x + update->width) > j*GRID_GRAIN 
+					update->x + update->width > j*GRID_GRAIN 
 				)
 				{
 					Grid[i][j]=replace;
 				}
 
 			j++;
-		}while((j*GRID_GRAIN) < (remove->x + remove->width));
-		j = (remove->x)/GRID_GRAIN;
+		}while((j*GRID_GRAIN) < (replace->x + replace->width));
+		j = (replace->x)/GRID_GRAIN;
 		i++;
-	}while(GridHdr[i]->coordinate < (remove->y + remove->height) );
+	}while(GridHdr[i]->coordinate < (replace->y + replace->height) );
 
 }
 void update_all_boundries(struct node* n)
@@ -943,7 +945,7 @@ void update_boundry(struct node* center, char orient)
 			}
 			break;
 		default:
-			assert(false);
+			assert(0);
 			break;
 	}
 }

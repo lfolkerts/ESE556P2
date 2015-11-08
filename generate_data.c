@@ -1,85 +1,63 @@
-#include <unistd.h> //getopt
-#include <getopt.h> //optind
 #include <stdio.h>
 #include  <fcntl.h>
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
-#include "my_header.h"
-
-#define PARAM param //parameter we are testing
-#define GRID_GRANULARITY 64
-
-//#define TIME_REPORT
-//#define DEBUG
-#ifdef DEBUG
-//VERBOSE DEBUGGING
-// #define DEBUG_VB_ECHO
-// #define DEBUG_VB_GN //generate node
-// #define DEBUG_VB_MAIN
-// #define DEBUG_VB_FM //fm_algorithm
-// #define DEBUG_VB_COST//cost function
-#endif
-
-//global variables
-struct node ** N_Arr; //indexed copies
-struct node **BHead, ** BTail; //bucet list head and tails
-
-int Offset, PadOffset, Modules;
-int ACnt, BCnt;
-int CMin, CMax;
-int TestCost;
-//function prototypes
-int gernerate_netlist();
-int cost(struct node* n);
-void shuffle_partition();
-void memfree();
-
-static int getint();
-static int endline();
-static int to_integer(char * c);
-static void help();
-static void inline request_help();
-
+#include <limits.h>
+#include"parameters.h"
+#include "generate_data.h"
+#include "grid.h"
+#include "overlapgrid.h"
+#include "node.h"
+#include "helper.h"
 
 /*************************** Input Processing/Initial Netlist generation **********************************/
 int GenerateNodes(FILE* gno_file)
 {
-	struct node *n;
+	struct node *n, *n_cpy;
 	char type;
+	int index, index_mod;
+
+	Endline(gno_file);
+
+	//fnodes - need to get number of terminals(pads) and number of total nodes (modules)
+        Modules = GetNextInt(gno_file); //number of nodes
+        PadOffset = GetNextInt(gno_file); //terminal offset
+        do{N_Arr = malloc((Modules+1)*sizeof(struct node*));} while(N_Arr==NULL);
 	
-	while( (type = (char) fgetc(gnt_file))!=EOF)
+	while( (type = (char) fgetc(gno_file))!=EOF)
 	{
 		
 		do
 		{
-			type = (char) fgetc(gnt_file);
+			type = (char) fgetc(gno_file);
 			if(type==EOF){return 1;}
-			if(type == '#'){ endline(gnt_file);continue;}
+			if(type == '#'){ Endline(gno_file);continue;}
 		}while(!isalpha(type));
 
-		index_mod = index = GetNextInt(gnt_file);
+		index_mod = index = GetNextInt(gno_file);
 		index_mod += (type=='p')?PadOffset:0;
 	
-		do{ n = malloc(sizeof(struct node));} while(n==NULL);
-		do{ n_cpy = malloc(sizeof(struct node))}while(n_cpy==NULL);
+		do{ n = (struct node*) malloc(sizeof(struct node));} while(n==NULL);
+		do{ n_cpy = (struct node*)malloc(sizeof(struct node));}while(n_cpy==NULL);
 		n->type = type;	
 		n->index = index;
 		n->locked = 0;
+		
 		n->cost = INT_MAX;
 		n->birth = NULL;
 		n->out_head = NULL;
 		n->dir = '\0';	
 		n->orientation = '\0';
-		n->x  = 0;
-		n->y = 0;
+		n->x  = INIT_X;
+		n->y = INIT_Y;
 		n->width = GetNextInt(gno_file);
-		n->height = GetNextInt(gno_file)		
+		n->height = GetNextInt(gno_file);	
 
 		assert(N_Arr[index_mod]==NULL);
 		N_Arr[index_mod] = n;
 		N_ArrCpy[index_mod] = n_cpy;
-		endline();		
+		Endline(gno_file);		
 	}
 }
 
@@ -92,6 +70,12 @@ int GenerateNetlist(FILE* gnt_file)
 	char type,  direction;
 	int i, index_mod, node_degree;	
 	char o_xflag, b_flag, p_flag; //output exclusive flag(only first node in set should be an output, unless pad), bidirectional flag, pad flag
+	int nets, pins;
+	
+	Endline(gnt_file);
+        //fnets - neet to genertate the netlist graph 
+        nets = GetNextInt(gnt_file);
+        pins = GetNextInt(gnt_file);
 
 	while((node_degree = GetNextInt(gnt_file))!= INT_MIN)
 	{
@@ -119,10 +103,9 @@ int GenerateNetlist(FILE* gnt_file)
 			if(direction == 'O'){o_xflag = (i==0)?1:0;} //only first in list should be output	
 			if(direction == 'B'){b_flag = 1;}
 
-#endif
 			//fetch/create node
 			if((n = N_Arr[index_mod])==NULL){fprintf(stderr, "NULL node unexpected");}
-			if(type == p){n->pdir = direction;}
+			if(type == 'p'){n->dir = direction;}
 	
 			if(i==0)
 			{
@@ -147,7 +130,7 @@ int GenerateNetlist(FILE* gnt_file)
 				}		 
 
 				//cleanup
-				endline();
+				Endline(gnt_file);
 				n = NULL;
 				e = e_net = NULL;
 				h = NULL; //we are done - reset
@@ -197,7 +180,7 @@ int GenerateNetlist(FILE* gnt_file)
 				}
 
 				//cleanup
-				endline(gnt_file);
+				Endline(gnt_file);
 				n = NULL;
 				h = NULL;
 				e = NULL;
@@ -210,7 +193,7 @@ int GenerateNetlist(FILE* gnt_file)
 		}
 		else
 		{
-			assert(o_flag); //need one output
+			assert(o_xflag); //need one output
 			assert(!b_flag); //no bidirectional pins
 		}
 	}//end while
@@ -223,14 +206,14 @@ int GeneratePlacement(FILE* gpl_file)
 	char type;	
 	int index_mod;
 
-	endline(gpl_file); //get rid of header
+	Endline(gpl_file); //get rid of header
 	while(1)
 	{
 		do
 		{
 			type = (char) fgetc(gpl_file);
-			(type==EOF){return 1;}
-			if(type == '#'){ endline(gpl_file);continue;}
+			if(type==EOF){return 1;}
+			if(type == '#'){ Endline(gpl_file);continue;}
 		}while(!isalpha(type));
 		index_mod = GetNextInt(gpl_file);
 		index_mod += (type=='p')?PadOffset:0;
@@ -240,49 +223,48 @@ int GeneratePlacement(FILE* gpl_file)
 	
 		n->x = GetNextInt(gpl_file);
 		n->y = GetNextInt(gpl_file);
-		n->orientation = GetOrientation();
+		n->orientation = GetOrientation(gpl_file);
 	
-		endline();
+		Endline(gpl_file);
 	}
 }
 
 int GenerateGrid(FILE* gg_file)
 {
 	struct node* n, **np;
-	struct row_hdr* rhdr; //information about the row
-	int num_rows;
+	struct grid_hdr* rhdr; //information about the row
 	int  coordinate, height, sitewidth, sitespacing, siteorient, sitesymmetry, subroworgin, numsites;
 	int i, j;
 
-	endline(); //get rid of header
+	Endline(gg_file); //get rid of header
 	
-	num_rows = GetNextInt(gg_file);
-	do{ GridHdr = (struct row_hdr**) malloc(num_rows * sizeof(row_hdr*)+2);} while(GridHdr==NULL);
-	do{ Grid = (struct node ***) malloc(num_rows * sizeof(node**))+1;} while(Grid==NULL);
-	do{ GridCpy = (struct node ***) malloc(num_rows * sizeof(node**))+1;} while(Grid==NULL);
-	do{ OverlapGrid = (struct overlap_node***) malloc(num_rows*sizeof(overlap_node**)+2)}while(OverlapGrid!=NULL);
-	do{ OverlapGridCpy = (struct overlap_node***) malloc(num_rows*sizeof(overlap_node**)+2)}while(OverlapGrid!=NULL);
+	NumRows = GetNextInt(gg_file);
+	do{ GridHdr = (struct grid_hdr**) malloc(NumRows * sizeof(struct grid_hdr*)+2);} while(GridHdr==NULL);
+	do{ Grid = (struct node ***) malloc(NumRows * sizeof(struct node**))+1;} while(Grid==NULL);
+	do{ GridCpy = (struct node ***) malloc(NumRows * sizeof(struct node**))+1;} while(Grid==NULL);
+	do{ OverlapGrid = (struct overlap_node***) malloc(NumRows*sizeof(struct overlap_node**)+2);}while(OverlapGrid!=NULL);
+	do{ OverlapGridCpy = (struct overlap_node***) malloc(NumRows*sizeof(struct overlap_node**)+2);}while(OverlapGrid!=NULL);
 	
 	//make rows
-	for(i=0; i<num_rows; i++)
+	for(i=0; i<NumRows; i++)
 	{
-		do{ rhdr = (struct row_hdr*) malloc(sizeof(row_hdr));} while(rhdr==NULL);
+		do{ rhdr = (struct grid_hdr*) malloc(sizeof(struct grid_hdr));} while(rhdr==NULL);
 		rhdr->coordinate = GetNextInt(gg_file);
 		rhdr->height = GetNextInt(gg_file);
 		rhdr-> sitewidth = GetNextInt(gg_file);
 		rhdr-> sitespacing = GetNextInt(gg_file);
 		rhdr -> siteorient = GetOrientation(gg_file);
-		rhdr -> sitesymmetry = get_sym(gg_file);
+		rhdr -> sitesymmetry = GetSymmetry(gg_file);
 		rhdr -> subroworgin = GetNextInt(gg_file);
 		rhdr -> numsites = GetNextInt(gg_file);
-		rhdr -> numindexes = (rhdr->numsites)/GRID_GRANULARITY + 1;		
+		rhdr -> numindexes = (rhdr->numsites)/GRID_GRAIN + 1;		
 
 		GridHdr[i] = rhdr;
 		if(i=0){ AvgRowHeight = rhdr->height; RowWidth = (rhdr->numsites)*(rhdr->sitewidth); }
 		assert((rhdr->numsites)*(rhdr->sitewidth) == RowWidth); //assum rows are the same width
 		//we will allocate an array of linked list for easy access insertion/deletion
 		//indexes will represent a pointer to the start of its range of coordinates
-		do{ np = (struct node**) malloc((rhdr->numindexes)  *sizeof(node*));} while(np==NULL);
+		do{ np = (struct node**) malloc((rhdr->numindexes)  *sizeof(struct node*));} while(np==NULL);
 		if(i=0){InitEmptyNode(RowWidth);} //initialize Empty Node array with approximate size
 
 		Grid[i] = np;
@@ -291,17 +273,16 @@ int GenerateGrid(FILE* gg_file)
 		n = NULL;
 		np = NULL;
 		rhdr = NULL;	
-		endline();
+		Endline(gg_file);
 	}
 	
-	do{ rhdr = (struct row_hdr*) malloc(sizeof(row_hdr));} while(rhdr==NULL);
+	do{ rhdr = (struct grid_hdr*) malloc(sizeof(struct grid_hdr));} while(rhdr==NULL);
 	rhdr->coordinate = GridHdr[i-1]->coordinate + GridHdr[i-1]->height;
 	GridHdr[i++] = rhdr;
-	do{ rhdr = (struct row_hdr*) malloc(sizeof(row_hdr));} while(rhdr==NULL);
-	rhdr->coordinte = INT_MIN;
+	do{ rhdr = (struct grid_hdr*) malloc(sizeof(struct grid_hdr));} while(rhdr==NULL);
+	rhdr->coordinate = INT_MIN;
 	GridHdr[i++] = rhdr;
-	AvgRowHeight = GridHdr[num_rows]->coordinate/num_rows;
-	NumRows = num_rows;
+	AvgRowHeight = GridHdr[NumRows]->coordinate/NumRows;
 			
 	return 0;
 }
@@ -309,16 +290,17 @@ int GenerateGrid(FILE* gg_file)
 void PopulateCopy()
 {
 	struct node *n, *ncpy;
+	int i;
 	for(i=0; i<Modules; i++)
 	{
 		n = N_Arr[i];
 		ncpy = N_ArrCpy[i];
 		if(n==NULL){continue;}
 		assert(ncpy!=NULL);
-		CopyNode(n, n_cpy);
+		CopyNode(n, ncpy);
 	}
 }
-
+/*
 void memfree()
 {
 	struct node* n;
@@ -351,4 +333,4 @@ void memfree()
 }
 
 ;
-}
+}*/

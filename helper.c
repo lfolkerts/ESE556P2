@@ -1,14 +1,16 @@
-#include <unistd.h> //getopt
-#include <getopt.h> //optind
 #include <stdio.h>
-#include  <fcntl.h>
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
-#include "my_header.h"
+#include "node.h"
+#include "helper.h"
+
+//local helper function
+int to_integer(char * c);
 
 int LogTwo(int i)
 {
+	int ret;
 	assert(i >= 0);
 	for(ret = 0; i !=0; ret++){ i = i>>1; }
 	return ret;
@@ -18,12 +20,12 @@ int LogTwo(int i)
 char GetOrientation(FILE* go_file)
 {
        int ret, i;
-        char s[2];
-	//      while(scanf("%d", &ret)<=0); //scanf f stops working after ~400 integer scans
+       char s[2], flipped_xor;
+	flipped_xor =0;
         while(1)
 	{	
-		s =(char)fgetc(go_file); //wait for first digit
-        	switch(s)
+		s[0] =(char)fgetc(go_file); //wait for first digit
+        	switch(s[0])
 		{
 			case EOF:
 				return 0;
@@ -52,7 +54,7 @@ char GetOrientation(FILE* go_file)
 		flipped_xor = 0; //direction should be immeadiately after next character
 					
         }
-        for(i=1; i<10 && isdigit(s[i] = (char)fgetc(gni_file)); i++);
+        for(i=1; i<10 && isdigit(s[i] = (char)fgetc(go_file)); i++);
         s[i] = '\0'; //null terminate
         return to_integer(s);
 }
@@ -61,17 +63,31 @@ int GetNextInt(FILE* gni_file)
 {
 	int ret, i;
 	char s[10];
+	char negative_flag;
 	//	while(scanf("%d", &ret)<=0); //scanf f stops working after ~400 integer scans
+	negative_flag = 0;
 	while(!isdigit((s[0]=(char)fgetc(gni_file)))) //wait for first digit
 	{
 		if(s[0] == '#') { Endline(gni_file); } //remove file
+		if(s[0] == '-') { negative_flag = 1; }
+		else { negative_flag = 0; }
 	}
 	for(i=1; i<10 && isdigit(s[i] = (char)fgetc(gni_file)); i++);
 	s[i] = '\0'; //null terminate
-	return to_integer(s);
+	ret = to_integer(s);
+	if(negative_flag==0) return ret;
+	else{ return -ret; }
 }
 
-
+char GetSymmetry(FILE* gs_file)
+{
+	char s;
+	while(!isalpha((s=(char)fgetc(gs_file)))) //wait for first digit
+        {
+                if(s == '#') { Endline(gs_file); } //remove file
+        }
+	return s;
+}
 
 /************* get_line ********************
  * Gets one line from infile

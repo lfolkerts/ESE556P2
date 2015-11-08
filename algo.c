@@ -5,52 +5,19 @@
 #include <stdlib.h>
 #include<stdint.h>
 #include <ctype.h>
-#include "my_header.h"
+#include <math.h>
+#include "parameters.h"
+#include "generate_data.h"
+#include "grid.h"
+#include "helper.h"
+#include "node.h"
+#include "overlapgrid.h"
 
-/* I/O Flags */
-//oflaf and sflag constants, for when fcntl is take out
-#define OUTFILE_O_FLAGS 578
-#define OUTFILE_S_FLAGS 384
-//and so on... 
-
-#define PARAM param //parameter we are testing
-#define SF_L 6+1 //ibmXX. and NULL terminator length
-
-//Compile Time Parameters/Constatnts
-#define S2US 1000000 //seconds to microseconds
-//#deinfe SEED_RANDOM
-#define OUTPUT_CSV
-//#define TIME_REPORT
-//#define DEBUG
-#ifdef DEBUG
-//VERBOSE DEBUGGING
-// #define DEBUG_VB_ECHO
-// #define DEBUG_VB_GN //generate node
-// #define DEBUG_VB_MAIN
-// #define DEBUG_VB_FM //fm_algorithm
-// #define DEBUG_VB_COST//cost function
-#endif
-
-//global variables
-struct node ** N_Arr; //indexed copies
-struct node **BHead, ** BTail; //bucet list head and tails
-
-int Offset, PadOffset, Modules;
-int ACnt, BCnt;
-int CMin, CMax;
-int TestCost;
-//function prototypes
-void fm_algorithm();
-int gernerate_netlist();
-int cost(struct node* n);
-void shuffle_partition();
-void memfree();
-
-static int getint();
-static int endline();
-static int to_integer(char * c);
-static void help();
-static void inline request_help();
+void sa_algorithm_no_overlap(int iterations);
+void sa_algorithm_shift(int iterations);
+void sa_algorithm_overlap(int iterations);
+void update_iterations(int* iter);
+void update_alpha(double *alpha);
 
 /*********** main ***********
  * Overall wrapper function
@@ -61,20 +28,18 @@ static void inline request_help();
 int main(int argc, char **argv) {
 
 	int return_code = argc;
-	int benchmark, final_benchmark;
 	struct timeval tv_start, tv_init, tv_done;
-	int pins, nets; //first lines of file readings
+	struct node* n;
 	//command interpretation
 	extern int optind;
 	int arg_num; //maintaining control of command line options
 	char opt; //command line options
-	int i, trial, f_no; //for loop counters
-	int results[NUM_TRIALS][STAT_MAX], ignore;
-	int param;
+	int i, f_no; //for loop counters
+	int cost_org, cost;
 	char sf_nodes[SF_L+5], sf_nets[SF_L+4], sf_pl[SF_L+2], sf_scl[SF_L+3], sf_wcl[SF_L+3];
+	FILE *f_nodes, *f_nets, *f_pl, *f_scl, *f_wcl;
 
-
-#ifdef
+#ifdef SEED_RANDOM
 	srand(time(NULL));
 #endif
 	gettimeofday(&tv_start, NULL);
@@ -87,7 +52,7 @@ int main(int argc, char **argv) {
 		{
 			case 't':
 				f_no = atoi(argv[optind-1]);
-				if(f_no>18 || f_no<=0){  fprintf(stderr, "Illegal Test Number\r\n", argv[optind]);	goto exit; }
+				if(f_no>18 || f_no<=0){  fprintf(stderr, "Illegal Test Number %s\r\n", argv[optind]);	goto exit; }
 
 			case 'h':
 				help();
@@ -118,49 +83,46 @@ int main(int argc, char **argv) {
 
 
 	/************************ Allocate Memory ********************************************************/
-	//fnodes - need to get number of terminals(pads) and number of total nodes (modules)
-	Modules = get_next_int(f_nodes); //number of nodes
-	PadOffset = get_next_int(f_nodes); //terminal offset
-	do{N_Arr = malloc((Modules+1)*sizeof(struct node*));} while(N_Arr==NULL);
-	GenerateNodes(f_nodes); //store size of each node
-
-	//fnets - neet to genertate the netlist graph 
-	nets = get_next_int(f_nets);
-	pins = get_next_int(f_nets);
+	//read from files and generate initial data structures based on info
+	GenerateNodes(f_nodes); 
 	GenerateNetlist(f_nets);
-	
 	GenertatePlacement(f_pl);
 	GenerateGrid(f_scl);
-
+	InitOverlapGrid();
+	InitGrid();
+	InitEmptyNodeList(Modules*9);
+	
+	//wcl only contains area informaition
 #ifdef DEBUG
-	fprintf(stderr, "Pins %d\t Nets %d\tModules %d\tPadOffset %d\n", pins, nets, Modules, PadOffset);
+	fprintf(stderr, "Height %d\t Width %d\tModules %d\tPadOffset %d\n", GridHdr[NumRows]->coordinate, RowWidth, Modules, PadOffset);
 #endif
 	gettimeofday(&tv_init, NULL);
 #ifdef DEBUG
-        fprintf(stderr, "%d: Creating initial placement \n", trial, benchmark);
+        fprintf(stderr, "Creating initial placement \n");
 #endif
-	InitialPlacementOverlap();
+	FillOverlapGrid();
+	cost_org = 0;
 	for(i=0; i<Modules; i++)
-	{
-		n = NArr[i];
+        {
+                n = N_Arr[i];
                 if(n==NULL){continue;}
-		cost(n);
                 cost_org += n->cost;
-	}
+        }
+
 	
 #ifdef DEBUG
-	fprintf(stderr, "%d: Creating better placement \n", trial, benchmark);
+	fprintf(stderr, "Creating better placement \n");
 #endif
 	sa_algorithm_overlap(Modules); //do algorithm
-	FillGrid(); //get rid of overlaps
-	sa_algorithm_local(Modules, INIT_TEMPERATURE);
+	//FillGrid(); //get rid of overlaps
+	//sa_algorithm_shift(Modules, INIT_TEMPERATURE);
 #ifdef DEBUG
-	fprintf(stderr, "%d: Analyzing Results\n", trial);
+	fprintf(stderr, "Analyzing Results\n");
 #endif
 	cost = 0;
 	for(i=0; i<Modules; i++)
 	{
-		n = NArr[i];
+		n = N_Arr[i];
 		if(n==NULL){continue;}
 		cost += n->cost;
 	}
@@ -168,9 +130,9 @@ int main(int argc, char **argv) {
 
 	//report
 #ifdef OUTPUT_CSV
-	fprintf(stdout, "%d,%d,%d\n", cost, cost_org - cost, (tv_done.tv_sec - tv_start.tv_sec)*S2US + tv_done.tv_usec - tv_start.tv_usec);
+	fprintf(stdout, "%d,%d,%ld\n", cost, cost_org - cost, (tv_done.tv_sec - tv_start.tv_sec)*S2US + tv_done.tv_usec - tv_start.tv_usec);
 #else
-	 fprintf(stdout, "Cost: %d\nImprovement: %d\nTime: %d\n", cost, cost_org - cost, (tv_done.tv_sec - tv_start.tv_sec)*S2US + tv_done.tv_usec - tv_start.tv_usec);
+	 fprintf(stdout, "Cost: %d\nImprovement: %d\nTime: %ld\n", cost, cost_org - cost, (tv_done.tv_sec - tv_start.tv_sec)*S2US + tv_done.tv_usec - tv_start.tv_usec);
 #endif
 
 	//free memory
@@ -182,26 +144,63 @@ exit:
 
 }
 
-void sa_algorithm_local(int iterations)
+void sa_algorithm_no_overlap(int iterations)
 {
         struct node* n;
         struct edge * e;
         struct hyperedge* h;
         double temperature, alpha;
-        int iterations;
         double acceptance;
         int i, nindex;
         int org_cost, cost_mod;
 
-        for(temperature = INIT_TEMPERATURE; temperature > FINAL_TEMPERATUE; temperture*=alpha)
+	alpha = INIT_ALPHA;
+        for(temperature = INIT_TEMPERATURE; temperature > FINAL_TEMPERATURE; temperature*=alpha)
         {
                 for(i=0; i<iterations; i++)
                 {
                         nindex = rand()%(Modules-PadOffset);
-                        n = NArr[nindex];
-                        org_cost = GetOverlapNodeCost(n);
-                        MoveLocal(n);
-                        cost_mod = GetOverlapNodeCost() - org_cost;
+                        n = N_Arr[nindex];
+                        //org_cost = GetOverlapNodeCost(n);
+                        cost_mod = MoveRandom(n);
+                        //cost_mod = GetOverlapNodeCost() - org_cost;
+                        if(cost_mod < 0){ acceptance = exp(-cost_mod/temperature) * RAND_PRECISION;}
+                        else{acceptance = 0; } //guarenteed acceptance
+                        if(rand()%RAND_PRECISION > acceptance)
+                        {
+                                AcceptMoveOverlap();
+                        }
+                        else
+                        {
+                                RejectMoveOverlap();
+                        }
+                }
+                update_iterations(&iterations);
+                update_alpha(&alpha);
+        }
+}
+
+
+void sa_algorithm_shift(int iterations)
+{
+        struct node* n;
+        struct edge * e;
+        struct hyperedge* h;
+        double temperature, alpha;
+        double acceptance;
+        int i, nindex;
+        int org_cost, cost_mod;
+
+	alpha = INIT_ALPHA;
+        for(temperature = INIT_TEMPERATURE; temperature > FINAL_TEMPERATURE; temperature*=alpha)
+        {
+                for(i=0; i<iterations; i++)
+                {
+                        nindex = rand()%(Modules-PadOffset);
+                        n = N_Arr[nindex];
+                        //org_cost = GetOverlapNodeCost(n);
+                        cost_mod = MoveShift(n);
+                        //cost_mod = GetOverlapNodeCost() - org_cost;
                         if(cost_mod < 0){ acceptance = exp(-cost_mod/temperature) * RAND_PRECISION;}
                         else{acceptance = 0; } //guarenteed acceptance
                         if(rand()%RAND_PRECISION > acceptance)
@@ -225,20 +224,18 @@ void sa_algorithm_overlap(int iterations)
 	struct edge * e;
 	struct hyperedge* h;
 	double temperature, alpha;	
-	int iterations;
 	double acceptance;
 	int i, nindex;
 	int org_cost, cost_mod;
-
-	for(temperature = INIT_TEMPERATURE; temperature > FINAL_TEMPERATUE; temperture*=alpha)
+	
+	alpha = INIT_ALPHA;
+	for(temperature = INIT_TEMPERATURE; temperature > FINAL_TEMPERATURE; temperature*=alpha)
 	{
 		for(i=0; i<iterations; i++)
 		{
 			nindex = rand()%(Modules-PadOffset);
-			n = NArr[nindex];
-			org_cost = GetOverlapNodeCost(n);
-			MoveOverlapRandom(n);
-			cost_mod = GetOverlapNodeCost() - org_cost;
+			n = N_Arr[nindex];
+			cost_mod = MoveOverlapRandom(n);
 			if(cost_mod < 0){ acceptance = exp(-cost_mod/temperature) * RAND_PRECISION;}
 			else{acceptance = 0; } //guarenteed acceptance
 			if(rand()%RAND_PRECISION > acceptance)

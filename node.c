@@ -1,3 +1,13 @@
+#include <stdio.h>
+#include  <fcntl.h>
+#include <stdlib.h>
+#include<stdint.h>
+#include <ctype.h>
+#include"parameters.h"
+#include "node.h"
+#include "helper.h"
+
+
 /****************************************************
 * This function will recalculate the cost of node n and modify the costs of surrounding nodes
 * It will return the delta cost for node n
@@ -61,7 +71,7 @@ int cost(struct node* n, int org_x, int org_y)
 
 void CopyNode(struct node* original, struct node* copy)
 {
-        assert(original != NULL &&  copy != NULL);
+	assert(original != NULL &&  copy != NULL);
 
         copy->type = original->type;
         copy->index = original->index;
@@ -84,6 +94,39 @@ void CopyNode(struct node* original, struct node* copy)
         copy->south = original->south;
         copy->east = original->east;
         copy->west = original->west;
+
+	copy->e_next = original->e_next;
+	copy->e_prev = original->e_prev;
+}
+void CopyParallelNode(struct node* original, struct node* copy)
+{
+	int index;
+	assert(original->type == 'a');
+	assert(original == N_Arr[original->index]); //make sure original is in the main set, not the copy set
+	
+	CopyNode(original, copy)
+	
+        //corner stitching
+        copy->north = N_ArrCpy[original->north->index];
+        copy->south =  N_ArrCpy[original->south->index];
+        copy->east =  N_ArrCpy[original->east->index];
+        copy->west =  N_ArrCpy[original->west->index];
+	
+}
+
+void RestoreParallelNode(struct node* original, struct node* copy)
+{
+        int index;
+        assert(original->type == 'a');
+        assert(original == N_ArrCpy[original->index]); //make sure original is in the copy set
+
+        CopyNode(original, copy)
+
+        //corner stitching
+        copy->north = N_Arr[original->north->index];
+        copy->south =  N_Arr[original->south->index];
+        copy->east =  N_Arr[original->east->index];
+        copy->west =  N_Arr[original->west->index];
 
 }
 

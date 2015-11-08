@@ -1,3 +1,14 @@
+#include <stdio.h>
+#include  <fcntl.h>
+#include <stdlib.h>
+#include<stdint.h>
+#include <ctype.h>
+#include <limits.h>
+#include <wand/MagickWand.h>
+#include"parameters.h"
+#include "node.h"
+
+
 void writeImage(char* image_filename)
 {
 	struct node* n;
