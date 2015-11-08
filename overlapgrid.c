@@ -200,9 +200,10 @@ int MoveOverlapRandom(struct node* move)
 	InsertOverlapNode(move, x, y);
 }
 
-void AcceptiOverlapMove()
+void AcceptOverlapMove()
 {
         struct node *n, *ncpy;
+	struct overlap_node *onode, *onodecpy, *onodecpyprev *onodetmp;
         int i, j;
         int ecnt;
         //copy modules
@@ -212,23 +213,60 @@ void AcceptiOverlapMove()
                 ncpy = N_ArrCpy[i];
                 if(n==NULL){continue;}
                 assert(ncpy != NULL);
-                CopyParallelNode(n, ncpy);
+                CopyNode(n, ncpy);
         }
         //copy grid ptrs
-        for(i=0; i<NumRows; i++)
+        for(i=0; i<NumRows+2; i++)
         {
-                for(j=0; j<RowWidth/GRID_GRAIN; j++)
+                for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
                 {
-                        n = OverlapGrid[i][j];
-                        if(n==NULL){OverlapGridCpy[i][j] = NULL;}
-			if(n->type == 'a'){ OverlapGridCpy[i][j] = N_ArrCpy[n->index];}
-                        else if(n->type == 'p'){ OverlapGridCpy[i][j] = N_ArrCpy[n->index+PadOffest];}
+                        onode = OverlapGrid[i][j];
+			onodecpy = OverlapGridCpy[i][j];
+			while(onode != NULL || onodecpy != NULL)
+			{
+
+                        	if(onode==NULL) //remove onodecpy
+				{
+					if(onodecpy->prev){onodecpy->prev->next = onodecpy->next;}
+					else { OverlapGridCpy[i][j] = onodecpy->next; } //head of list
+					if(onodecpy->next){onodecpy->next->prev = onodecpy->prev;}
+					onodetmp = onodecpy;
+					onodecpyprev = onodecpy;
+					onodecpy = onodecpy->next;
+					free(onodetmp);
+					onodetmp=NULL;
+					//onode is already NULL
+				}
+				else if(onodecpy == NULL)
+				{
+					do{onodecpy = malloc(sizeof(overlap_node));}while(onodecpy==NULL);
+					onodecpy->prev = onodecpyprev;
+					onodecpy->next = NULL:
+					if(onode->node->type=='a'){onodecpy->node = N_ArrCpy[onode->node->index];}
+					else if(onode->node->type=='p'){onodecpy->node = N_ArrCpy[onode->node->index + PadOffset];}
+					onodecpyprev = onodecpy;
+                                        onodecpy = onodecpy->next; //NULL
+					onode = onode->next;
+				}	
+				else if(onode->node->type != onodecpy->node->type ||
+						onode->node->index != onodecpy->node->index) //different nodes
+				{
+					if(onode->node->type=='a'){onodecpy->node = N_ArrCpy[onode->node->index];}
+					else if(onode->node->type=='p'){onodecpy->node = N_ArrCpy[onode->node->index + PadOffset];}
+					onodecpyprev = onodecpy;
+					onodecpy = onodecpy->next;
+					onode = onode->next;
+				}
+					
+			}
+			onodecpyprev = NULL;
                 }
         }
 }
 void RejectOverlapMove()
 {
-        struct node *n, *ncpy;
+	struct node *n, *ncpy;
+	struct overlap_node *onode, *onodecpy, *onodeprev *onodetmp;
         int i, j;
         int ecnt;
         //copy modules
@@ -238,18 +276,53 @@ void RejectOverlapMove()
                 ncpy = N_ArrCpy[i];
                 if(n==NULL){continue;}
                 assert(ncpy != NULL);
-                RestoreParallelNode(ncpy, n);
+                CopyNode(ncpy, n); //no pointer - can directly copy
         }
         //copy grid ptrs
-        for(i=0; i<NumRows; i++)
+        for(i=0; i<NumRows+2; i++)
         {
-                for(j=0; j<RowWidth/GRID_GRAIN; j++)
+                for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
                 {
-                        ncpy = OverlapGridCpy[i][j];
-			if(ncpy==NULL){OverlapGrid[i][j] = NULL;}
-                        else if(ncpy->type == 'a'){ OverlapGrid[i][j] = N_Arr[ncpy->index];}
-                        else if(ncpy->type == 'p'){ OverlapGrid[i][j] = N_Arr[ncpy->index+PadOffest];}
+                        onode = OverlapGrid[i][j];
+			onodecpy = OverlapGridCpy[i][j];
+			while(onodecpy != NULL || onode != NULL)
+			{
+
+                        	if(onodecpy==NULL) //remove onodecpy
+				{
+					if(onode->prev){onode->prev->next = onode->next;}
+					else { OverlapGrid[i][j] = onode->next; } //head of list
+					if(onode->next){onode->next->prev = onode->prev;}
+					onodetmp = onode;
+					onodeprev = onode;
+					onode = onode->next;
+					free(onodetmp);
+					onodetmp=NULL;
+					//onodecpy is already NULL
+				}
+				else if(onode == NULL)
+				{
+					do{onode = malloc(sizeof(overlap_node));}while(onode==NULL);
+					onode->prev = onoderev;
+					onode->next = NULL:
+					if(onodecpy->node->type=='a'){onode->node = N_Arr[onodecpy->node->index];}
+					else if(onodecpy->node->type=='p'){onode->node = N_Arr[onodecpy->node->index + PadOffset];}
+					onodeprev = onode;
+                                        onode = onode->next; //NULL
+					onodecpy = onodecpy->next;
+				}	
+				else if(onodecpy->node->type != onode->node->type ||
+						onodecpy->node->index != onode->node->index) //different nodes
+				{
+					if(onodecpy->node->type=='a'){onode->node = N_ArrCpy[onodecpy->node->index];}
+					else if(onodecpy->node->type=='p'){onode->node = N_ArrCpy[onodecpy->node->index + PadOffset];}
+					onodeprev = onode;
+					onode = onode->next;
+					onodecpy = onodecpy->next;
+				}
+					
+			}
+			onodeprev = NULL;
                 }
         }
 }
-	
