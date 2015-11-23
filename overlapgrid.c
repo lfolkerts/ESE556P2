@@ -9,15 +9,18 @@
 #ifdef DEBUG_VB_OLG //overlap grid 
 #include<stdio.h>
 // #define DEBUG_VB_OLGWO //work overlap
-// #define DEBUG_VB_OLGACC //accept
-// #define DEBUG_VB_OLGREJ //rejecti
-// #define DEBUG_VB_OLGVERIFY
+ //#define DEBUG_VB_OLGACC //accept
+ //#define DEBUG_VB_OLGREJ //rejecti
+ //#define DEBUG_VB_OLGCPB //copy_bin
+ #define DEBUG_VB_OLGVERIFY
 #endif
 
 //variables unique to this module
 int gridOverlap, gridOverlapCpy;
 int extraRowWidth, extraRowWidthCpy;
 void work_overlap(struct node* insert, int insert_flag);
+struct overlap_node* copy_bin(struct overlap_node* onode, struct overlap_node* onodecpy, struct node** narrcpy);
+int find_match(struct node* n, struct overlap_node* onode);
 void inline verify();
 
 void InitOverlapGrid()
@@ -353,9 +356,6 @@ void AcceptOverlapMove()
                 if(n==NULL){continue;}
 		assert(ncpy != NULL);
                 CopyNode(n, ncpy);
-#ifdef DEBUG_VB_OLGACC
-                        fprintf(stderr, "\t\tBin Y%5dX%5d\n", i, j);
-#endif
         }
 #ifdef DEBUG_VB_OLGACC
         fprintf(stderr, "\t\tCopied Nodes\n");
@@ -370,55 +370,8 @@ void AcceptOverlapMove()
 		        fprintf(stderr, "\t\tBin Y%5dX%5d\n", i, j);
 #endif
 
-                        onode = OverlapGrid[i][j];
-			onodecpy = OverlapGridCpy[i][j];
-			onodecpyprev = NULL;
-			while(onode != NULL || onodecpy != NULL)
-			{
-
-                        	if(onode==NULL) //remove onodecpy
-				{
-					if(onodecpy->prev!=NULL){onodecpy->prev->next = onodecpy->next;}
-					else { OverlapGridCpy[i][j] = onodecpy->next; } //head of list
-					if(onodecpy->next){onodecpy->next->prev = onodecpy->prev;}
-					onodetmp = onodecpy;
-					onodecpyprev = onodecpyprev;
-					onodecpy = onodecpy->next;
-					free(onodetmp);
-					onodetmp=NULL;
-					//onode is already NULL
-				}
-				else if(onodecpy == NULL) //add onodecpy
-				{
-					do{onodecpy = malloc(sizeof(struct overlap_node));}while(onodecpy==NULL);
-					if(OverlapGridCpy[i][j]==NULL){ OverlapGridCpy[i][j] = onodecpy; }
-					onodecpy->prev = onodecpyprev;
-					if(onodecpyprev!=NULL){onodecpyprev->next = onodecpy;}
-					onodecpy->next = NULL;
-					if(onode->node->type=='a'){onodecpy->node = N_ArrCpy[onode->node->index];}
-					else if(onode->node->type=='p'){onodecpy->node = N_ArrCpy[onode->node->index + PadOffset];}
-					onodecpyprev = onodecpy;
-                                        onodecpy = onodecpy->next; //NULL
-					onode = onode->next;
-				}	
-				else if(onode->node->type != onodecpy->node->type ||
-						onode->node->index != onodecpy->node->index) //different nodes
-				{
-					if(onode->node->type=='a'){onodecpy->node = N_ArrCpy[onode->node->index];}
-					else if(onode->node->type=='p'){onodecpy->node = N_ArrCpy[onode->node->index + PadOffset];}
-					onodecpyprev = onodecpy;
-					onodecpy = onodecpy->next;
-					onode = onode->next;
-				}
-			        else
-                                {
-                                        onode = onode->next;
-                                	onodecpyprev = onodecpy;
-				        onodecpy = onodecpy->next;
-                                }
-			
-			}
-                }
+			OverlapGridCpy[i][j] = copy_bin(OverlapGrid[i][j], OverlapGridCpy[i][j], N_ArrCpy); //update backup info
+        }
         }
 	verify();
 }
@@ -445,76 +398,114 @@ void RejectOverlapMove()
         fprintf(stderr, "\t\tCopied Nodes\n");
 #endif
 
-        //copy grid ptrs
-        for(i=0; i<NumRows+2; i++)
-        {
-                for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
-                {
+	//copy grid ptrs
+	for(i=0; i<NumRows+2; i++)
+	{
+		for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
+		{
 #ifdef DEBUG_VB_OLGREJ
-                        fprintf(stderr, "\t\tBin Y%5dX%5d\n", i, j);
-#endif
-                        onode = OverlapGrid[i][j];
-			onodecpy = OverlapGridCpy[i][j];
-			onodeprev = NULL;
-			while(onodecpy != NULL || onode != NULL)
-			{
-
-                        	if(onodecpy==NULL) //remove onode
-				{
-#ifdef DEBUG_VB_OLGREJ
-            			        fprintf(stderr, "\t\tOnode Deleted\n");
-#endif
-            
-					if(onode->prev!=NULL){onode->prev->next = onode->next;}
-					else { OverlapGrid[i][j] = onode->next; } //head of list
-					if(onode->next){onode->next->prev = onode->prev;}
-					onodetmp = onode;
-					onodeprev = onodeprev;
-					onode = onode->next;
-					free(onodetmp);
-					onodetmp=NULL;
-					//onodecpy is already NULL
-				}
-				else if(onode == NULL) //add onode
-				{
-#ifdef DEBUG_VB_OLGREJ
-                                        fprintf(stderr, "\t\tOnodeCpy Deleted\n");
+			fprintf(stderr, "\t\tBin Y%5dX%5d\n", i, j);
 #endif
 
-					do{onode = malloc(sizeof(struct overlap_node));}while(onode==NULL);
-					onode->prev = onodeprev;
-					if(onodeprev!=NULL){onodeprev->next = onode;}
-					onode->next = NULL;
-					if(onodecpy->node->type=='a'){onode->node = N_Arr[onodecpy->node->index];}
-					else if(onodecpy->node->type=='p'){onode->node = N_Arr[onodecpy->node->index + PadOffset];}
-					onodeprev = onode;
-                                        onode = onode->next; //NULL
-					onodecpy = onodecpy->next;
-				}	
-				else if(onodecpy->node->type != onode->node->type ||
-						onodecpy->node->index != onode->node->index) //different nodes
-				{
-#ifdef DEBUG_VB_OLGREJ
-                                        fprintf(stderr, "\t\tOnode Replaces\n");
-#endif
-
-					if(onodecpy->node->type=='a'){onode->node = N_Arr[onodecpy->node->index];}
-					else if(onodecpy->node->type=='p'){onode->node = N_Arr[onodecpy->node->index + PadOffset];}
-					onodeprev = onode;
-					onode = onode->next;
-					onodecpy = onodecpy->next;
-				}
-				else
-				{
-					onodeprev = onode;
-					onode = onode->next;
-					onodecpy = onodecpy->next;
-				}
-					
-			}
-                }
-        }
+			OverlapGrid[i][j] = copy_bin(OverlapGridCpy[i][j], OverlapGrid[i][j], N_Arr); //retore from backup info
+		}
+	}
 	verify();
+}
+
+struct overlap_node* copy_bin(struct overlap_node* onode, struct overlap_node* onodecpy, struct node** narrcpy)
+{
+	struct overlap_node* onodecpyprev;
+	struct overlap_node* ocpyhead;
+	struct overlap_node* onode_insert, *onode_remove;
+	struct node* node_insert;
+	
+	ocpyhead = onodecpy;
+	onodecpyprev = NULL;
+	while(onode != NULL || onodecpy != NULL)
+	{
+		onode_insert = NULL;
+		onode_remove = NULL;
+		node_insert= NULL;
+
+		//compare nodes and set up copying action
+		if(onode==NULL) //remove onodecpy
+		{
+			onode_remove = onodecpy;
+			
+		}
+		else if(onodecpy == NULL) //add onodecpy
+		{
+			node_insert = onode->node;
+		}	
+		else if(onode->node->type != onodecpy->node->type ||
+				onode->node->index != onodecpy->node->index) //different nodes
+		{
+			if(find_match(onodecpy->node, onode)) //find node in original list
+			{
+				//need to insert current node
+				node_insert = onode->node;
+				onodecpyprev = onodecpy->prev; //insert after onode prev
+			}
+			else if(find_match(onode->node, onodecpy)) //find node in item we are copying to
+			{
+				onode_remove = onodecpy;
+			}
+			else
+			{
+				assert(0); //unexpected
+				fprintf(stderr, "ERR: Node not found\n");
+				if(onode->node->type=='a'){onodecpy->node = narrcpy[onode->node->index];}
+				else if(onode->node->type=='p'){onodecpy->node = narrcpy[onode->node->index + PadOffset];}
+				onodecpyprev = onodecpy;
+				onodecpy = onodecpy->next;
+				onode = onode->next;
+			}
+		}
+		else
+		{
+			onode = onode->next;
+			onodecpyprev = onodecpy;
+			onodecpy = onodecpy->next;
+		}
+
+		//insert or replace actions
+		if(node_insert!=NULL)
+		{
+			do{onode_insert = malloc(sizeof(struct overlap_node));}while(onode_insert==NULL);
+			if(ocpyhead == NULL || onodecpyprev == NULL){ ocpyhead = onode_insert; } //new head of list
+			onode_insert->prev = onodecpyprev;
+			if(onodecpyprev!=NULL)
+			{
+				onode_insert->next = onodecpyprev->next;
+				onodecpyprev->next = onode_insert;
+			}
+			else{ onode_insert->next = NULL; }
+			fprintf(stderr, "LARSHERE");
+
+			if(node_insert->type=='a'){onode_insert->node = narrcpy[node_insert->index];}
+			else if(node_insert->type=='p'){onode_insert->node = narrcpy[node_insert->index + PadOffset];}
+			fprintf(stderr, "LARSHERE");
+			onodecpy = onode_insert;
+		}
+		if(onode_remove != NULL)
+		{
+			if(onode_remove->prev!=NULL){onode_remove->prev->next = onode_remove->next;}
+			else { ocpyhead = onode_remove->next; } //head of list
+			if(onode_remove->next){onode_remove->next->prev = onode_remove->prev;}
+			onodecpy = onode_remove->next;
+			free(onode_remove);
+		}
+	}
+	return ocpyhead;
+}
+
+int find_match(struct node* n, struct overlap_node* onode)
+{
+	if(n == NULL){ return -1;}
+	if(onode == NULL){return 0; } //no match
+	else if(onode->node->type == n->type && onode->node->index == n->index){ return 1; }
+	else{	return find_match(n, onode->next); }
 }
 
 int CostTimberwolf(struct node* ncost, int xorg, int yorg, int overlaporg, int row_widthorg)
@@ -530,17 +521,18 @@ void inline verify()
 	int i, j;
 	struct overlap_node *onode, *onodecpy;
 	for(i=0; i<NumRows+2; i++)
-        {
-                for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
-                {
+	{
+		for(j=0; j<RowWidth/GRID_GRAIN+2; j++)
+		{
 			onode = OverlapGrid[i][j];
-                        onodecpy = OverlapGridCpy[i][j];
+			onodecpy = OverlapGridCpy[i][j];
 			while(onode != NULL || onodecpy !=NULL)
 			{
-				fprintf(stderr, "\t\tVerify Bin (Y%4d,X%4d)\n", i, j);
+//				fprintf(stderr, "\t\tVerify Bin (Y%4d,X%4d)", i, j);
 				assert(onode != NULL);
 				assert(onodecpy != NULL);
-				assert(onode->node->index == onodecpy->node->index);
+				fprintf(stderr, "Onodes %c%d, %c%d\n", onode->node->type, onode->node->index, onodecpy->node->type, onodecpy->node->index);
+//				assert(onode->node->index == onodecpy->node->index);
 				onode = onode->next;
 				onodecpy = onodecpy->next;
 			}

@@ -80,8 +80,6 @@ void CopyNode(struct node* original, struct node* copy)
         copy->cost = original->cost;
         copy->birth = original->birth;
         copy-> out_head =  original->out_head;
-        copy->e_next = original->e_next;
-        copy-> e_prev = original->e_prev;
         copy->dir = original->dir;
         copy->orientation = original->orientation;
 
@@ -96,8 +94,6 @@ void CopyNode(struct node* original, struct node* copy)
         copy->east = original->east;
         copy->west = original->west;
 
-	copy->e_next = original->e_next;
-	copy->e_prev = original->e_prev;
 }
 void CopyParallelNode(struct node* original, struct node* copy)
 {

@@ -19,6 +19,6 @@
 //VERBOSE DEBUGGING
 // #define DEBUG_VB_ALGO //main module
 // #define DEBUG_VB_GEN //generate module
-// #define DEBUG_VB_OLG  //overlap grid module
+ #define DEBUG_VB_OLG  //overlap grid module
 #endif
 
